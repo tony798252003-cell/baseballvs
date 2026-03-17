@@ -3,21 +3,6 @@
     <!-- Audio 元素 -->
     <audio ref="audioRef" class="hidden"></audio>
 
-    <!-- 投手選擇對話框 -->
-    <PitcherSelectDialog 
-      :show="showPitcherSelect"
-      title="選擇對戰投手"
-      :pitchers="pitchers"
-      :filtered-pitchers="filteredPitchers"
-      :teams-with-pitchers="teamsWithPitchers"
-      :team-logos="teamLogos"
-      :selected-team="selectedTeam"
-      :played-pitchers="playedPitchers"
-      :get-team-pitcher-count="getTeamPitcherCount"
-      @close="showPitcherSelect = false"
-      @select="currentPitcher = $event; showPitcherSelect = false"
-      @update:selected-team="selectedTeam = $event"
-    />
 
     <!-- 通知 -->
     <Notification :notification="notification" />
@@ -44,10 +29,13 @@
       v-if="mode === 'lineup'"
       :game-type="gameType"
       :batters="batters"
+      :pitchers="pitchers"
       :selected-team="selectedTeam"
       :team-logos="teamLogos"
       :teams-with-batters="teamsWithBatters"
+      :teams-with-pitchers="teamsWithPitchers"
       :filtered-batters="filteredBatters"
+      :filtered-pitchers="filteredPitchers"
       :current-lineup="currentLineup"
       :current-pitcher="currentPitcher"
       :replacing-index="replacingIndex"
@@ -59,7 +47,7 @@
       @add-player="addToLineup"
       @replace-player="replaceLineupPlayer"
       @remove-player="removeFromLineup"
-      @select-pitcher="showPitcherSelect = true"
+      @set-pitcher="currentPitcher = $event"
       @clear-pitcher="currentPitcher = null"
       @random-select="randomSelectLineup"
       @clear-lineup="clearLineup"
@@ -381,12 +369,6 @@ const addToLineup = (player) => {
   }
   currentLineup.value = [...currentLineup.value, player]
   
-  // 當選滿9人時，自動彈出投手選擇對話框
-  if (currentLineup.value.length === 9 && !currentPitcher.value) {
-    setTimeout(() => {
-      showPitcherSelect.value = true
-    }, 300)
-  }
 }
 
 const removeFromLineup = (index) => {
@@ -856,11 +838,11 @@ const handleOutBase = (speechText, toastText) => {
   const newOuts = outs.value + 1
   balls.value = 0
   strikes.value = 0
+  outs.value = newOuts
 
   if (newOuts >= 3) {
     handleThreeOuts()
   } else {
-    outs.value = newOuts
     showToast(toastText)
     nextBatter()
   }
@@ -898,14 +880,23 @@ const addScore = (runs) => {
   if (gameType.value === 'versus') {
     if (isTop.value) {
       score.away += runs
-      if (currentInning < 9) inningScores.value.away[currentInning] += runs
+      if (currentInning < 9) {
+        if (inningScores.value.away[currentInning] === undefined) inningScores.value.away[currentInning] = 0
+        inningScores.value.away[currentInning] += runs
+      }
     } else {
       score.home += runs
-      if (currentInning < 9) inningScores.value.home[currentInning] += runs
+      if (currentInning < 9) {
+        if (inningScores.value.home[currentInning] === undefined) inningScores.value.home[currentInning] = 0
+        inningScores.value.home[currentInning] += runs
+      }
     }
   } else {
     score.away += runs
-    if (currentInning < 9) inningScores.value.away[currentInning] += runs
+    if (currentInning < 9) {
+      if (inningScores.value.away[currentInning] === undefined) inningScores.value.away[currentInning] = 0
+      inningScores.value.away[currentInning] += runs
+    }
   }
 }
 
