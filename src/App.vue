@@ -120,22 +120,24 @@
     />
 
     <!-- 代打選擇器彈窗 -->
-    <BatterSelectDialog 
+    <BatterSelectDialog
       :show="showBatterSelect"
       :filtered-batters="filteredBatters"
       :teams-with-batters="teamsWithBatters"
       :team-logos="teamLogos"
       :selected-team="selectedTeam"
+      :selected-league="selectedLeague"
       :played-batters="playedBatters"
       :lineup="lineup"
       :current-batter-index="currentBatterIndex"
       @close="showBatterSelect = false"
       @select="substituteBatter($event)"
       @update:selected-team="selectedTeam = $event"
+      @update:selected-league="selectedLeague = $event"
     />
 
     <!-- 換投手選擇器彈窗 -->
-    <PitcherSelectDialog 
+    <PitcherSelectDialog
       v-if="mode === 'game'"
       :show="showPitcherSelect"
       title="選擇投手"
@@ -144,11 +146,13 @@
       :teams-with-pitchers="teamsWithPitchers"
       :team-logos="teamLogos"
       :selected-team="selectedTeam"
+      :selected-league="selectedLeague"
       :played-pitchers="playedPitchers"
       :get-team-pitcher-count="getTeamPitcherCount"
       @close="showPitcherSelect = false"
       @select="substitutePitcher($event)"
       @update:selected-team="selectedTeam = $event"
+      @update:selected-league="selectedLeague = $event"
     />
   </div>
 </template>

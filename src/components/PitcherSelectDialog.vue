@@ -8,6 +8,18 @@
         </button>
       </div>
 
+      <!-- 一軍/二軍切換 -->
+      <div class="flex gap-2 mb-3">
+        <button v-for="l in ['一軍', '二軍', 'all']" :key="l"
+          @click="$emit('update:selectedLeague', l)"
+          :class="[
+            'px-4 py-1.5 rounded-full font-bold text-sm transition border-2',
+            selectedLeague === l ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-orange-600 border-orange-300 hover:bg-orange-50'
+          ]">
+          {{ l === 'all' ? '全部' : l }}
+        </button>
+      </div>
+
       <!-- 球隊篩選 -->
       <div class="flex gap-2 mb-4 flex-wrap">
         <button @click="$emit('update:selectedTeam', null)" :class="[
@@ -96,11 +108,12 @@ const props = defineProps({
   teamsWithPitchers: Array,
   teamLogos: Object,
   selectedTeam: null,
+  selectedLeague: String,
   playedPitchers: Set,
   getTeamPitcherCount: Function
 });
 
-defineEmits(['close', 'select', 'update:selectedTeam']);
+defineEmits(['close', 'select', 'update:selectedTeam', 'update:selectedLeague']);
 
 const showOtherTeams = ref(false);
 

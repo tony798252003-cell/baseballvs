@@ -8,6 +8,18 @@
         </button>
       </div>
       
+      <!-- 一軍/二軍切換 -->
+      <div class="flex gap-2 mb-3">
+        <button v-for="l in ['一軍', '二軍', 'all']" :key="l"
+          @click="$emit('update:selectedLeague', l)"
+          :class="[
+            'px-4 py-1.5 rounded-full font-bold text-sm transition border-2',
+            selectedLeague === l ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-pink-600 border-pink-300 hover:bg-pink-50'
+          ]">
+          {{ l === 'all' ? '全部' : l }}
+        </button>
+      </div>
+
       <!-- 球隊篩選 -->
       <div class="flex gap-2 mb-4 flex-wrap">
         <button @click="$emit('update:selectedTeam', null)" :class="[
@@ -16,13 +28,31 @@
         ]">
           全部
         </button>
-        <button v-for="team in teamsWithBatters" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
+        <!-- 中職六隊 -->
+        <button v-for="team in cpblTeamsWithBatters" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
           'px-2 py-2 rounded-xl font-bold transition-all border-2 border-white shadow-md',
           selectedTeam === team ? 'bg-pink-400 text-white scale-105' : 'bg-white text-pink-600 hover:bg-pink-50'
         ]">
           <img v-if="teamLogos[team]" :src="teamLogos[team]" class="w-8 h-8 object-contain" :alt="team" />
           <span class="text-sm" v-else>{{ team }}</span>
         </button>
+        <!-- 其他球隊折疊 -->
+        <button v-if="otherTeamsWithBatters.length > 0"
+          @click="showOtherTeams = !showOtherTeams"
+          :class="[
+            'px-2 py-2 rounded-xl font-bold transition-all border-2 border-white shadow-md text-xs',
+            isOtherTeamSelected ? 'bg-pink-400 text-white scale-105' : 'bg-white text-pink-600 hover:bg-pink-50'
+          ]">
+          🌍 {{ showOtherTeams ? '▲' : '▼' }}
+        </button>
+        <template v-if="showOtherTeams">
+          <button v-for="team in otherTeamsWithBatters" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
+            'px-2 py-1 rounded-xl font-bold transition-all border-2 shadow-md text-xs',
+            selectedTeam === team ? 'bg-pink-400 text-white border-pink-400 scale-105' : 'bg-white/80 text-pink-600 border-pink-200 hover:bg-pink-50'
+          ]" style="max-width:80px; word-break:break-all">
+            {{ team }}
+          </button>
+        </template>
       </div>
 
       <!-- 球員列表 -->
@@ -49,21 +79,38 @@
 </template>
 
 <script setup>
+import { computed, ref } from 'vue';
+
+const CPBL_TEAMS = ['樂天桃猿', '統一獅', '富邦悍將', '味全龍', '台鋼雄鷹', '中信兄弟'];
+
 const props = defineProps({
   show: Boolean,
   filteredBatters: Array,
   teamsWithBatters: Array,
   teamLogos: Object,
   selectedTeam: null,
+  selectedLeague: String,
   playedBatters: Set,
   lineup: Array,
   currentBatterIndex: Number
 });
 
-defineEmits(['close', 'select', 'update:selectedTeam']);
+defineEmits(['close', 'select', 'update:selectedTeam', 'update:selectedLeague']);
+
+const showOtherTeams = ref(false);
+
+const cpblTeamsWithBatters = computed(() =>
+  props.teamsWithBatters.filter(t => CPBL_TEAMS.includes(t))
+);
+const otherTeamsWithBatters = computed(() =>
+  props.teamsWithBatters.filter(t => !CPBL_TEAMS.includes(t))
+);
+const isOtherTeamSelected = computed(() =>
+  props.selectedTeam !== null && !CPBL_TEAMS.includes(props.selectedTeam)
+);
 
 const isPlayerDisabled = (player) => {
-  return props.playedBatters.has(player.name + player.number) || 
+  return props.playedBatters.has(player.name + player.number) ||
          props.lineup.some((p, idx) => idx !== props.currentBatterIndex && p.name === player.name && p.number === player.number);
 };
 </script>
