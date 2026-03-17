@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚾ 棒球對決 (Vue版)</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="app"></div>
+    
+    <script>
+        const { createApp, ref, reactive, computed, watch, onMounted, nextTick } = Vue;
+
+        // 預設模擬資料
+        const DEMO_DATA = `姓名,背號,球隊,照片,加油歌
+大谷翔平,17,道奇,https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Shohei_Ohtani_2024.jpg/440px-Shohei_Ohtani_2024.jpg,https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3
+林智勝,31,味全,https://img.ltn.com.tw/Upload/sports/page/800/2023/04/16/phpdG8aVq.jpg,https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3
+陳晨威,98,樂天,,
+江坤宇,90,兄弟,,`;
+
+        createApp({
+            template: `
+                <div>
+                    <!-- 通知 -->
+                    <div v-if="notification" :class="[
+                        'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 px-6 py-4 rounded-xl shadow-2xl z-50 flex items-center gap-3 transition-all',
+                        notification.type === 'alert' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'
+                    ]">
+                        <svg v-if="notification.type === 'alert'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="15" y1="9" x2="9" y2="15" />
+                            <line x1="9" y1="9" x2="15" y2="15" />
+                        </svg>
+                        <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="16" x2="12" y2="12" />
+                            <line x1="12" y1="8" x2="12.01" y2="8" />
+                        </svg>
+                        <span class="text-lg font-bold">{{ notification.text }}</span>
+                    </div>
+
+                    <!-- 設定畫面 -->
+                    <div v-if="mode === 'setup'" class="min-h-screen bg-slate-100 p-4 font-sans flex flex-col items-center justify-center">
+                        <div class="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
+                            <div class="bg-blue-600 p-6 text-white text-center">
+                                <h1 class="text-3xl font-bold mb-2">⚾ 棒球對決</h1>
+                                <p class="opacity-90">設定您的球員與賽制</p>
+                            </div>
+                            
+                            <div class="p-6 space-y-6">
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-2">比賽模式</label>
+                                    <div class="flex gap-2">
+                                        <button @click="gameType = 'single'" :class="[
+                                            'flex-1 py-3 rounded-lg font-bold transition-all',
+                                            gameType === 'single' ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-slate-100 text-slate-500'
+                                        ]">
+                                            單人無限打擊
+                                        </button>
+                                        <button @click="gameType = 'versus'" :class="[
+                                            'flex-1 py-3 rounded-lg font-bold transition-all',
+                                            gameType === 'versus' ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-slate-100 text-slate-500'
+                                        ]">
+                                            雙人攻守交換
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-2">匯入球員名單 (CSV)</label>
+                                    <textarea 
+                                        v-model="csvInput"
+                                        @input="parseCSV(csvInput)"
+                                        class="w-full h-32 p-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="貼上 Excel/Google Sheet 的內容..."
+                                    ></textarea>
+                                </div>
+
+                                <button @click="mode = 'game'" class="w-full bg-green-500 hover:bg-green-600 text-white text-xl font-bold py-4 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3" />
+                                    </svg>
+                                    開始比賽
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 比賽畫面 -->
+                    <div v-else class="min-h-screen bg-slate-100 p-2 sm:p-4 font-sans pb-24 touch-manipulation">
+                        <div class="max-w-md mx-auto">
+                            <!-- 頂部導航 -->
+                            <div class="flex justify-between items-center mb-4">
+                                <button @click="mode = 'setup'" class="p-2 bg-white rounded-full shadow text-slate-600">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="3" />
+                                        <path d="M12 1v6m0 6v6m5.5-9v6m-11-6v6" />
+                                    </svg>
+                                </button>
+                                <div class="text-slate-800 font-bold">{{ gameType === 'single' ? '無限暢打模式' : '雙人對戰模式' }}</div>
+                                <button @click="isMuted = !isMuted" class="p-2 bg-white rounded-full shadow text-slate-600">
+                                    <svg v-if="isMuted" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                        <line x1="23" y1="9" x2="17" y2="15" />
+                                        <line x1="17" y1="9" x2="23" y2="15" />
+                                    </svg>
+                                    <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- 記分板 -->
+                            <div class="bg-slate-800 text-white p-3 rounded-xl flex justify-between items-center shadow-lg mb-4 select-none">
+                                <div class="text-center w-1/3">
+                                    <div class="text-xs text-slate-400">GUEST</div>
+                                    <div class="text-3xl font-bold font-mono text-yellow-400">{{ score.away }}</div>
+                                </div>
+                                <div class="text-center w-1/3 border-x border-slate-600">
+                                    <div class="text-xs text-slate-400">INNING</div>
+                                    <div class="text-xl font-bold">
+                                        {{ gameType === 'versus' ? (isTop ? '▲' : '▼') : '' }} {{ inning }}
+                                    </div>
+                                    <div class="flex justify-center gap-1 mt-1">
+                                        <div v-for="i in 2" :key="i" :class="[
+                                            'w-3 h-3 rounded-full transition-colors',
+                                            i - 1 < outs ? 'bg-red-500' : 'bg-slate-600'
+                                        ]"></div>
+                                    </div>
+                                    <div class="text-xs text-red-400 mt-1">{{ outs }} OUT</div>
+                                </div>
+                                <div class="text-center w-1/3">
+                                    <div class="text-xs text-slate-400">HOME</div>
+                                    <div class="text-3xl font-bold font-mono">{{ score.home }}</div>
+                                </div>
+                            </div>
+
+                            <!-- 球場 -->
+                            <div class="relative">
+                                <div class="relative w-48 h-48 mx-auto my-4 transform rotate-45 border-4 border-white bg-green-600 rounded-lg shadow-xl select-none">
+                                    <!-- 1壘 -->
+                                    <div :class="[
+                                        'absolute top-0 right-0 w-8 h-8 -mt-1 -mr-1 transition-all duration-300',
+                                        runners[0] ? 'bg-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.8)] scale-110' : 'bg-white'
+                                    ]"></div>
+                                    <!-- 2壘 -->
+                                    <div :class="[
+                                        'absolute top-0 left-0 w-8 h-8 -mt-1 -ml-1 transition-all duration-300',
+                                        runners[1] ? 'bg-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.8)] scale-110' : 'bg-white'
+                                    ]"></div>
+                                    <!-- 3壘 -->
+                                    <div :class="[
+                                        'absolute bottom-0 left-0 w-8 h-8 -mb-1 -ml-1 transition-all duration-300',
+                                        runners[2] ? 'bg-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.8)] scale-110' : 'bg-white'
+                                    ]"></div>
+                                    <!-- 本壘 -->
+                                    <div class="absolute bottom-0 right-0 w-8 h-8 -mb-1 -mr-1 bg-white rounded-tl-full"></div>
+                                </div>
+                                <button @click="showPitchCount = !showPitchCount" class="absolute top-0 left-0 bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-slate-600 shadow border border-slate-200 flex items-center gap-1">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                                    </svg>
+                                    記球數
+                                </button>
+                            </div>
+
+                            <!-- 記球數區 -->
+                            <div v-if="showPitchCount" class="bg-slate-800 p-3 rounded-lg mb-4 flex items-center justify-between text-white animate-pulse">
+                                <div class="flex gap-4 px-2">
+                                    <div class="text-center">
+                                        <div class="text-xs text-slate-400">BALL</div>
+                                        <div class="text-xl font-bold text-green-400">{{ balls }}</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-xs text-slate-400">STRIKE</div>
+                                        <div class="text-xl font-bold text-yellow-400">{{ strikes }}</div>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @click="addBall" class="px-4 py-2 bg-green-600 rounded font-bold hover:bg-green-500 active:scale-95">壞球</button>
+                                    <button @click="addStrike" class="px-4 py-2 bg-yellow-600 rounded font-bold hover:bg-yellow-500 active:scale-95">好球</button>
+                                    <button @click="balls = 0; strikes = 0" class="p-2 bg-slate-600 rounded text-slate-300">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                            <path d="M3 3v5h5" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 打者卡片 -->
+                            <div v-if="currentPlayer" class="bg-white rounded-xl p-4 shadow-lg mb-4 flex items-center gap-4 relative overflow-hidden select-none">
+                                <div class="absolute top-0 right-0 w-24 h-full bg-blue-50 transform skew-x-12 translate-x-8 z-0"></div>
+                                <div class="relative z-10 w-20 h-20 flex-shrink-0">
+                                    <img v-if="currentPlayer.photo" :src="currentPlayer.photo" :alt="currentPlayer.name" class="w-20 h-20 rounded-full object-cover border-4 border-slate-200 bg-slate-200" />
+                                    <div v-else class="w-20 h-20 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                            <circle cx="9" cy="7" r="4" />
+                                            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="relative z-10 flex-1">
+                                    <div class="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full inline-block mb-1">
+                                        {{ currentPlayer.team }} #{{ currentPlayer.number }}
+                                    </div>
+                                    <h2 class="text-2xl font-black text-slate-800">{{ currentPlayer.name }}</h2>
+                                    <div v-if="currentPlayer.song" class="flex items-center gap-2 mt-1">
+                                        <div class="text-xs text-green-600 flex items-center gap-1">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                            </svg>
+                                            加油歌 Ready
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <audio ref="audioRef" class="hidden"></audio>
+
+                            <!-- 操作按鈕 -->
+                            <div class="grid grid-cols-3 gap-2 sm:gap-3">
+                                <button @click="handleHit(1)" class="col-span-1 bg-blue-500 text-white p-4 rounded-xl font-bold text-lg shadow-[0_4px_0_rgb(29,78,216)] active:shadow-none active:translate-y-[4px] transition-all">一安</button>
+                                <button @click="handleHit(2)" class="col-span-1 bg-blue-600 text-white p-4 rounded-xl font-bold text-lg shadow-[0_4px_0_rgb(30,64,175)] active:shadow-none active:translate-y-[4px] transition-all">二安</button>
+                                <button @click="handleHit(3)" class="col-span-1 bg-blue-700 text-white p-4 rounded-xl font-bold text-lg shadow-[0_4px_0_rgb(29,78,216)] active:shadow-none active:translate-y-[4px] transition-all">三安</button>
+                                <button @click="handleOut()" class="col-span-1 bg-red-500 text-white p-4 rounded-xl font-bold text-lg shadow-[0_4px_0_rgb(185,28,28)] active:shadow-none active:translate-y-[4px] transition-all">出局</button>
+                                <button @click="handleWalk()" class="col-span-1 bg-purple-500 text-white p-4 rounded-xl font-bold text-lg shadow-[0_4px_0_rgb(126,34,206)] active:shadow-none active:translate-y-[4px] transition-all">保送</button>
+                                <button @click="handleHit(4)" class="col-span-1 bg-orange-500 text-white p-4 rounded-xl font-bold text-lg shadow-[0_4px_0_rgb(194,65,12)] active:shadow-none active:translate-y-[4px] transition-all flex flex-col items-center justify-center leading-none">
+                                    <span>全壘打</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mt-1 opacity-80">
+                                        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                                        <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                                        <path d="M4 22h16" />
+                                        <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                                        <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                                        <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `,
+            setup() {
+                // === 狀態管理 ===
+                const mode = ref('setup'); // setup, game
+                const gameType = ref('single'); // single, versus
+                
+                // 球員名單
+                const roster = ref([]);
+                const lineup = ref([]);
+                const csvInput = ref(DEMO_DATA);
+
+                // 比賽數據
+                const currentBatterIndex = ref(0);
+                const score = reactive({ away: 0, home: 0 });
+                const inning = ref(1);
+                const isTop = ref(true);
+                const outs = ref(0);
+                const runners = ref([false, false, false]); // [一壘, 二壘, 三壘]
+                
+                // 記球數
+                const showPitchCount = ref(false);
+                const balls = ref(0);
+                const strikes = ref(0);
+
+                // 系統狀態
+                const notification = ref(null);
+                const isMuted = ref(false);
+                const audioRef = ref(null);
+
+                // 計算屬性
+                const currentPlayer = computed(() => {
+                    if (roster.value.length === 0 || lineup.value.length === 0) return null;
+                    return roster.value[lineup.value[currentBatterIndex.value]];
+                });
+
+                // === 初始化 ===
+                onMounted(() => {
+                    parseCSV(csvInput.value);
+                });
+
+                const parseCSV = (text) => {
+                    try {
+                        const lines = text.trim().split('\n');
+                        const data = lines.slice(1).map(line => {
+                            const values = line.split(',');
+                            return {
+                                name: values[0]?.trim() || '未命名',
+                                number: values[1]?.trim() || '00',
+                                team: values[2]?.trim() || '自由球員',
+                                photo: values[3]?.trim() || '',
+                                song: values[4]?.trim() || ''
+                            };
+                        });
+                        roster.value = data;
+                        lineup.value = data.map((_, i) => i);
+                    } catch (e) {
+                        console.error("CSV 解析錯誤", e);
+                    }
+                };
+
+                const showToast = (text, type = 'info') => {
+                    notification.value = { text, type };
+                    setTimeout(() => notification.value = null, 3000);
+                };
+
+                // === 音效控制 ===
+                watch([currentBatterIndex, mode, isMuted], () => {
+                    if (mode.value === 'game' && audioRef.value && !isMuted.value) {
+                        const player = currentPlayer.value;
+                        if (player && player.song) {
+                            audioRef.value.src = player.song;
+                            const playPromise = audioRef.value.play();
+                            if (playPromise !== undefined) {
+                                playPromise.catch(error => {
+                                    console.log("Auto-play prevented:", error);
+                                });
+                            }
+                        } else if (audioRef.value) {
+                            audioRef.value.pause();
+                        }
+                    }
+                });
+
+                // === 棒球邏輯 ===
+                const nextBatter = () => {
+                    balls.value = 0;
+                    strikes.value = 0;
+                    currentBatterIndex.value = (currentBatterIndex.value + 1) % lineup.value.length;
+                };
+
+                const handleHit = (bases) => {
+                    let runs = 0;
+                    let newRunners = [...runners.value];
+
+                    if (bases === 4) { // 全壘打
+                        runs = newRunners.filter(r => r).length + 1;
+                        newRunners = [false, false, false];
+                        showToast(`全壘打！帶有 ${runs} 分打點！`, 'alert');
+                    } else {
+                        // 推進
+                        if (newRunners[2]) { runs++; newRunners[2] = false; }
+                        if (newRunners[1]) {
+                            if (bases >= 2) { runs++; newRunners[1] = false; }
+                            else { newRunners[2] = true; newRunners[1] = false; }
+                        }
+                        if (newRunners[0]) {
+                            if (bases >= 3) { runs++; newRunners[0] = false; }
+                            else if (bases === 2) { newRunners[2] = true; newRunners[0] = false; }
+                            else { newRunners[1] = true; newRunners[0] = false; }
+                        }
+                        if (bases === 1) newRunners[0] = true;
+                        if (bases === 2) newRunners[1] = true;
+                        if (bases === 3) newRunners[2] = true;
+
+                        const hitNames = ['一安', '二安', '三安'];
+                        if (runs > 0) showToast(`${hitNames[bases-1]}！得了 ${runs} 分！`);
+                    }
+
+                    runners.value = newRunners;
+                    addScore(runs);
+                    nextBatter();
+                };
+
+                const handleWalk = () => {
+                    let newRunners = [...runners.value];
+                    let runs = 0;
+                    if (newRunners[0]) {
+                        if (newRunners[1]) {
+                            if (newRunners[2]) { runs = 1; }
+                            newRunners[2] = true;
+                        }
+                        newRunners[1] = true;
+                    }
+                    newRunners[0] = true;
+                    runners.value = newRunners;
+                    if (runs > 0) showToast("滿壘保送擠回一分！");
+                    addScore(runs);
+                    nextBatter();
+                };
+
+                const handleOut = () => {
+                    const newOuts = outs.value + 1;
+                    balls.value = 0;
+                    strikes.value = 0;
+
+                    if (newOuts >= 3) {
+                        if (gameType.value === 'versus') {
+                            showToast("三人出局！攻守交換", 'alert');
+                            if (!isTop.value) inning.value++;
+                            isTop.value = !isTop.value;
+                        } else {
+                            showToast("三人出局！清除壘包", 'alert');
+                        }
+                        outs.value = 0;
+                        runners.value = [false, false, false];
+                        nextBatter();
+                    } else {
+                        outs.value = newOuts;
+                        showToast("出局！");
+                        nextBatter();
+                    }
+                };
+
+                const addScore = (runs) => {
+                    if (runs === 0) return;
+                    if (gameType.value === 'versus') {
+                        if (isTop.value) {
+                            score.away += runs;
+                        } else {
+                            score.home += runs;
+                        }
+                    } else {
+                        score.away += runs;
+                    }
+                };
+
+                const addBall = () => {
+                    if (balls.value + 1 === 4) {
+                        showToast("四壞球保送！");
+                        handleWalk();
+                    } else {
+                        balls.value++;
+                    }
+                };
+
+                const addStrike = () => {
+                    if (strikes.value + 1 === 3) {
+                        showToast("三振出局！", 'alert');
+                        handleOut();
+                    } else {
+                        strikes.value++;
+                    }
+                };
+
+                return {
+                    mode,
+                    gameType,
+                    roster,
+                    lineup,
+                    csvInput,
+                    currentBatterIndex,
+                    score,
+                    inning,
+                    isTop,
+                    outs,
+                    runners,
+                    showPitchCount,
+                    balls,
+                    strikes,
+                    notification,
+                    isMuted,
+                    audioRef,
+                    currentPlayer,
+                    parseCSV,
+                    handleHit,
+                    handleWalk,
+                    handleOut,
+                    addBall,
+                    addStrike
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
