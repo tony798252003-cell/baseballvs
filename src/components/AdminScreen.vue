@@ -108,9 +108,46 @@
 
     <!-- 編輯 modal -->
     <div v-if="editingPlayer" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @click.self="editingPlayer = null">
-      <div class="bg-slate-800 rounded-2xl p-6 w-full max-w-lg border border-slate-600">
-        <h2 class="text-lg font-bold mb-4">編輯：{{ editingPlayer.name }} #{{ editingPlayer.number }}</h2>
+      <div class="bg-slate-800 rounded-2xl p-6 w-full max-w-lg border border-slate-600 max-h-[90vh] overflow-y-auto">
+        <h2 class="text-lg font-bold mb-4">編輯球員資料</h2>
         <div class="space-y-3">
+          <div class="flex gap-3">
+            <div class="flex-1">
+              <label class="text-xs text-slate-400 mb-1 block">姓名</label>
+              <input v-model="editForm.name" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" />
+            </div>
+            <div class="w-24">
+              <label class="text-xs text-slate-400 mb-1 block">背號</label>
+              <input v-model="editForm.number" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" />
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">球隊</label>
+            <select v-model="editForm.team" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400">
+              <option value="">-- 選擇球隊 --</option>
+              <option v-for="t in teams" :key="t">{{ t }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">主守位</label>
+            <select v-model="editForm.main_position" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400">
+              <option value="">-- 選擇守位 --</option>
+              <option v-for="pos in allPositions" :key="pos">{{ pos }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">其他守位（可複選）</label>
+            <div class="flex flex-wrap gap-2">
+              <label v-for="pos in allPositions" :key="pos"
+                :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition select-none',
+                  editForm.otherPositionsArr.includes(pos)
+                    ? 'bg-yellow-500/20 border-yellow-500 text-yellow-300'
+                    : 'bg-slate-700 border-slate-600 text-slate-300 hover:border-slate-400']">
+                <input type="checkbox" class="hidden" :value="pos" v-model="editForm.otherPositionsArr" />
+                {{ pos }}
+              </label>
+            </div>
+          </div>
           <div>
             <label class="text-xs text-slate-400 mb-1 block">音樂連結 (song)</label>
             <input v-model="editForm.song" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" placeholder="https://..." />
@@ -123,17 +160,64 @@
             <label class="text-xs text-slate-400 mb-1 block">Intro 文字</label>
             <textarea v-model="editForm.intro" rows="2" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400 resize-none"></textarea>
           </div>
-          <div>
-            <label class="text-xs text-slate-400 mb-1 block">其他守位 (other_positions)</label>
-            <input v-model="editForm.other_positions" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" placeholder="e.g. SS/2B" />
-          </div>
         </div>
-        <div class="flex gap-3 mt-5 justify-end">
+        <div class="flex gap-3 mt-5">
+          <button @click="confirmDelete" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-bold transition">刪除球員</button>
+          <div class="flex-1"></div>
           <button @click="editingPlayer = null" class="px-4 py-2 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 transition">取消</button>
           <button @click="saveEdit" :disabled="saving" class="px-4 py-2 bg-yellow-500 text-black rounded-lg text-sm font-bold hover:bg-yellow-400 transition disabled:opacity-50">
             {{ saving ? '儲存中...' : '儲存' }}
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- 刪除確認 modal -->
+    <div v-if="deletingPlayer" class="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]">
+      <div class="bg-slate-800 rounded-2xl p-6 w-full max-w-sm border border-red-600">
+        <h2 class="text-lg font-bold mb-2">確認刪除</h2>
+        <p class="text-slate-300 text-sm mb-5">確定要刪除 <span class="text-white font-bold">{{ deletingPlayer.name }} #{{ deletingPlayer.number }}</span>？此操作無法復原。</p>
+        <div class="flex gap-3 justify-end">
+          <button @click="deletingPlayer = null" class="px-4 py-2 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 transition">取消</button>
+          <button @click="deletePlayer" :disabled="saving" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-bold transition disabled:opacity-50">
+            {{ saving ? '刪除中...' : '確認刪除' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 嗆斯曲 tab -->
+    <div v-if="activeTab === 'chants'" class="flex-1 overflow-hidden flex flex-col gap-4 p-4">
+      <!-- 新增表單 -->
+      <div class="flex gap-3 items-end">
+        <div>
+          <label class="text-xs text-slate-400 mb-1 block">球隊</label>
+          <select v-model="chantForm.team" class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400">
+            <option value="">-- 選擇 --</option>
+            <option v-for="t in teams" :key="t">{{ t }}</option>
+          </select>
+        </div>
+        <div class="w-36">
+          <label class="text-xs text-slate-400 mb-1 block">名稱</label>
+          <input v-model="chantForm.name" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" placeholder="制霸天下" />
+        </div>
+        <div class="flex-1">
+          <label class="text-xs text-slate-400 mb-1 block">URL</label>
+          <input v-model="chantForm.url" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" placeholder="https://..." />
+        </div>
+        <button @click="addChant" :disabled="saving" class="px-4 py-2 bg-yellow-500 text-black rounded-lg text-sm font-bold hover:bg-yellow-400 transition disabled:opacity-50 whitespace-nowrap">新增</button>
+      </div>
+      <!-- 列表 -->
+      <div class="flex-1 overflow-y-auto">
+        <div v-for="(chants, team) in chantsByTeam" :key="team" class="mb-4">
+          <div class="text-xs text-slate-400 font-bold uppercase mb-2">{{ team }}</div>
+          <div v-for="c in chants" :key="c.id" class="flex items-center gap-3 py-2 px-3 bg-slate-800 rounded-lg border border-slate-700 mb-1.5">
+            <span class="font-bold text-sm flex-1">{{ c.name }}</span>
+            <span class="text-xs text-slate-500 truncate max-w-xs">{{ c.url }}</span>
+            <button @click="deleteChant(c)" class="text-xs text-red-400 hover:text-red-300 transition">刪除</button>
+          </div>
+        </div>
+        <div v-if="Object.keys(chantsByTeam).length === 0" class="text-slate-500 text-sm text-center py-8">尚無嗆斯曲</div>
       </div>
     </div>
 
@@ -155,6 +239,7 @@ const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQxWiFy6zh81UBv
 const tabs = [
   { id: 'unmapped', label: '🔗 未對應音樂' },
   { id: 'all', label: '📋 所有球員' },
+  { id: 'chants', label: '🎵 球隊嗆斯曲' },
 ]
 const activeTab = ref('unmapped')
 const searchQuery = ref('')
@@ -168,8 +253,23 @@ const csvUnmatched = ref([])
 const selectedCsvPlayer = ref(null)
 const editingPlayer = ref(null)
 const editForm = ref({})
+const deletingPlayer = ref(null)
 
-const teams = computed(() => [...new Set(dbPlayers.value.map(p => p.team))].sort())
+// 嗆斯曲
+const teamChantsData = ref([])
+const chantForm = ref({ team: '', name: '', url: '' })
+const chantsByTeam = computed(() => {
+  const map = {}
+  for (const c of teamChantsData.value) {
+    if (!map[c.team]) map[c.team] = []
+    map[c.team].push(c)
+  }
+  return map
+})
+
+const allPositions = ['SP', 'RP', 'CP', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH']
+
+const teams = computed(() => [...new Set(dbPlayers.value.map(p => p.team).filter(Boolean))].sort())
 
 const unmappedPlayers = computed(() => dbPlayers.value.filter(p => !p.song))
 
@@ -203,6 +303,10 @@ async function loadData() {
   // 載入 DB 球員
   const { data } = await supabase.from('players').select('id, name, number, team, main_position, song, emoji, intro, other_positions').order('team').order('name')
   dbPlayers.value = data || []
+
+  // 載入嗆斯曲
+  const { data: chants } = await supabase.from('team_chants').select('*').order('team').order('name')
+  teamChantsData.value = chants || []
 
   // 載入 CSV 並找出沒 map 的
   try {
@@ -246,17 +350,70 @@ async function mapPlayers(dbPlayer) {
 
 function editPlayer(p) {
   editingPlayer.value = p
-  editForm.value = { song: p.song || '', emoji: p.emoji || '', intro: p.intro || '', other_positions: p.other_positions || '' }
+  const otherArr = p.other_positions ? p.other_positions.split('/').map(s => s.trim()).filter(Boolean) : []
+  editForm.value = {
+    name: p.name || '',
+    number: p.number || '',
+    team: p.team || '',
+    main_position: p.main_position || '',
+    otherPositionsArr: otherArr,
+    song: p.song || '',
+    emoji: p.emoji || '',
+    intro: p.intro || '',
+  }
 }
 
 async function saveEdit() {
   saving.value = true
-  const { error } = await supabase.from('players').update(editForm.value).eq('id', editingPlayer.value.id)
+  const update = {
+    name: editForm.value.name,
+    number: editForm.value.number,
+    team: editForm.value.team,
+    main_position: editForm.value.main_position,
+    other_positions: editForm.value.otherPositionsArr.join('/') || null,
+    song: editForm.value.song || null,
+    emoji: editForm.value.emoji || null,
+    intro: editForm.value.intro || null,
+  }
+  const { error } = await supabase.from('players').update(update).eq('id', editingPlayer.value.id)
   saving.value = false
   if (error) { showToast('❌ 儲存失敗'); return }
-  Object.assign(editingPlayer.value, editForm.value)
+  Object.assign(editingPlayer.value, update)
   editingPlayer.value = null
   showToast('✅ 已儲存')
+}
+
+function confirmDelete() {
+  deletingPlayer.value = editingPlayer.value
+}
+
+async function deletePlayer() {
+  saving.value = true
+  const { error } = await supabase.from('players').delete().eq('id', deletingPlayer.value.id)
+  saving.value = false
+  if (error) { showToast('❌ 刪除失敗'); return }
+  dbPlayers.value = dbPlayers.value.filter(p => p.id !== deletingPlayer.value.id)
+  deletingPlayer.value = null
+  editingPlayer.value = null
+  showToast('🗑️ 已刪除')
+}
+
+async function addChant() {
+  if (!chantForm.value.team || !chantForm.value.name || !chantForm.value.url) return
+  saving.value = true
+  const { data, error } = await supabase.from('team_chants').insert(chantForm.value).select().single()
+  saving.value = false
+  if (error) { showToast('❌ 新增失敗'); return }
+  teamChantsData.value.push(data)
+  chantForm.value = { team: '', name: '', url: '' }
+  showToast('✅ 已新增')
+}
+
+async function deleteChant(c) {
+  const { error } = await supabase.from('team_chants').delete().eq('id', c.id)
+  if (error) { showToast('❌ 刪除失敗'); return }
+  teamChantsData.value = teamChantsData.value.filter(x => x.id !== c.id)
+  showToast('🗑️ 已刪除')
 }
 
 function showToast(msg) {

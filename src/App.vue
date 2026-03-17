@@ -147,6 +147,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { supabase } from './lib/supabase.js'
 import Notification from './components/Notification.vue'
 import AdminScreen from './components/AdminScreen.vue'
 import MenuScreen from './components/MenuScreen.vue'
@@ -311,8 +312,12 @@ const homeTeamName = computed(() => {
 })
 
 const csvInput = ref('')
+const teamChants = ref([])
+
 onMounted(async () => {
   await loadCSVFromURL()
+  const { data } = await supabase.from('team_chants').select('team, name, url')
+  if (data) teamChants.value = data
   
   // 初始化語音引擎
   if ('speechSynthesis' in window) {
@@ -434,11 +439,11 @@ const substituteBatter = (player) => {
   
   // 播放代打語音
   speak(TEXTS.game.speech.substitute(player.name), processSpeechText, isMuted.value, 
-    !isMuted.value ? () => playBatterMusic(player) : null)
+    !isMuted.value ? () => playBatterMusic(player, teamChants.value) : null)
   
   // 如果沒有語音或靜音，直接播放音樂
   if (isMuted.value || !('speechSynthesis' in window)) {
-    playBatterMusic(player)
+    playBatterMusic(player, teamChants.value)
   }
 }
 
@@ -527,7 +532,7 @@ const skipIntro = () => {
   // 確保第一棒的語音和音樂播放
   if (currentPlayer.value && !isMuted.value) {
     setTimeout(() => speakBatterName(currentPlayer.value.name, currentBatterIndex.value), 300)
-    setTimeout(() => playBatterMusic(currentPlayer.value), 3800)
+    setTimeout(() => playBatterMusic(currentPlayer.value, teamChants.value), 3800)
   }
 }
 
@@ -620,7 +625,7 @@ watch([currentBatterIndex, mode, isMuted, showLineupIntro], ([newIndex, newMode,
                 intro: player.intro,
                 audioRef: !!audioRef.value 
               })
-              playBatterMusic(player)
+              playBatterMusic(player, teamChants.value)
             } else {
               console.log('跳過音樂播放:', { 
                 isMuted: isMuted.value, 
@@ -811,7 +816,8 @@ const handleThreeOuts = () => {
       introIndex,
       needHomeTeamIntro,
       isMuted,
-      audioRef
+      audioRef,
+      teamChants
     })
   } else {
     inningManager.handleThreeOutsSingle(nextBatter)

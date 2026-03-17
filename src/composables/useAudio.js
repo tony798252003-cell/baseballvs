@@ -3,7 +3,7 @@ import { ref } from 'vue'
 export function useAudio() {
   const audioRef = ref(null)
   
-  const playBatterMusic = (player) => {
+  const playBatterMusic = (player, teamChants = []) => {
     console.log('playBatterMusic 被調用:', { 
       player: player?.name,
       hasAudioRef: !!audioRef.value,
@@ -61,7 +61,21 @@ export function useAudio() {
         .then(() => console.log('song 開始播放'))
         .catch(error => console.log("Auto-play prevented:", error))
     } else {
-      console.log('球員沒有 song 或 intro')
+      // 沒有個人應援曲，嘗試播放球隊嗆斯曲
+      const chants = teamChants.filter(c => c.team === player.team)
+      if (chants.length > 0) {
+        const chant = chants[Math.floor(Math.random() * chants.length)]
+        console.log('播放球隊嗆斯曲:', chant.name)
+        audioRef.value.src = chant.url
+        audioRef.value.loop = false
+        audioRef.value.onended = () => {
+          audioRef.value.currentTime = 0
+          audioRef.value.play().catch(() => {})
+        }
+        audioRef.value.play().catch(error => console.log("Auto-play prevented:", error))
+      } else {
+        console.log('球員沒有 song 或 intro，也沒有球隊嗆斯曲')
+      }
     }
   }
   

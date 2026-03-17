@@ -49,7 +49,7 @@ export function useInningManager(gameState, showToast) {
       if (gameType.value === 'versus') {
         showToast(TEXTS.game.gameOver(score.away, score.home), TEXTS.toast.alert)
       } else {
-        showToast(TEXTS.game.gameOverSingle(score.home), TEXTS.toast.alert)
+        showToast(TEXTS.game.gameOverSingle(score.away), TEXTS.toast.alert)
       }
       mode.value = 'menu'
       return true
@@ -59,15 +59,16 @@ export function useInningManager(gameState, showToast) {
 
   // 處理三出局（versus mode）
   const handleThreeOutsVersus = (callbacks) => {
-    const { playLineupIntro, speakBatterName, playBatterMusic, currentPlayer, showLineupIntro, introIndex, needHomeTeamIntro, isMuted, audioRef } = callbacks
+    const { playLineupIntro, speakBatterName, playBatterMusic, currentPlayer, showLineupIntro, introIndex, needHomeTeamIntro, isMuted, audioRef, teamChants } = callbacks
 
-    // 保存當前隊伍的打者索引
+    // 保存當前隊伍的下一個打者索引（三出局那個打者打完了，下次從下一棒開始）
+    const nextBatterIndex = (currentBatterIndex.value + 1) % lineup.value.length
     if (isTop.value) {
-      awayTeam.value.batterIndex = currentBatterIndex.value
-      console.log('一局上結束，保存客隊索引:', currentBatterIndex.value)
+      awayTeam.value.batterIndex = nextBatterIndex
+      console.log('一局上結束，保存客隊下一棒索引:', nextBatterIndex)
     } else {
-      homeTeam.value.batterIndex = currentBatterIndex.value
-      console.log('一局下結束，保存主隊索引:', currentBatterIndex.value)
+      homeTeam.value.batterIndex = nextBatterIndex
+      console.log('一局下結束，保存主隊下一棒索引:', nextBatterIndex)
     }
 
     // 切換攻守
@@ -116,7 +117,7 @@ export function useInningManager(gameState, showToast) {
 
       if (audioRef.value) {
         setTimeout(() => {
-          playBatterMusic(currentPlayer.value)
+          playBatterMusic(currentPlayer.value, teamChants?.value || [])
         }, 4000)
       }
     }
