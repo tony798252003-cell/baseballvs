@@ -78,10 +78,13 @@
             <img v-if="pitcher.photo" :src="pitcher.photo" class="w-12 h-12 rounded-full object-cover border-2 border-orange-400 shadow-md flex-shrink-0" />
             <div v-else class="w-12 h-12 rounded-full bg-orange-200 flex items-center justify-center text-xl flex-shrink-0">🔥</div>
             <div class="flex-1 min-w-0 flex flex-col justify-between">
-              <div :class="[
-                'text-gray-800 font-black leading-tight mb-1',
-                pitcher.name.length > 6 ? 'text-sm' : pitcher.name.length > 4 ? 'text-base' : 'text-lg'
-              ]" :style="pitcher.name.length > 6 ? 'word-wrap: break-word; overflow-wrap: break-word;' : ''">{{ pitcher.name }}</div>
+              <div class="flex items-center gap-1 mb-1">
+                <span :class="[
+                  'text-gray-800 font-black leading-tight',
+                  pitcher.name.length > 6 ? 'text-sm' : pitcher.name.length > 4 ? 'text-base' : 'text-lg'
+                ]" :style="pitcher.name.length > 6 ? 'word-wrap: break-word; overflow-wrap: break-word;' : ''">{{ pitcher.name }}</span>
+                <span v-if="pitcher.song" class="text-xs">🎵</span>
+              </div>
               <div class="text-xs text-orange-600 font-bold">#{{ pitcher.number }} · {{ pitcher.mainPosition }}</div>
             </div>
           </div>
