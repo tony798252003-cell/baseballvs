@@ -1,9 +1,9 @@
 <template>
-  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="bg-slate-900 border border-white/10 rounded-3xl p-8 max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white border border-slate-100 rounded-3xl p-8 max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl">
       <div class="flex items-center justify-between mb-6">
-        <h2 class="text-4xl font-black text-white">{{ title }}</h2>
-        <button @click="$emit('close')" class="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-3 rounded-full transition-all duration-150 cursor-pointer">
+        <h2 class="text-4xl font-black text-slate-900">{{ title }}</h2>
+        <button @click="$emit('close')" class="text-red-500 hover:text-red-600 hover:bg-red-50 p-3 rounded-full transition-all duration-150 cursor-pointer">
           <XCircleIcon :size="32" />
         </button>
       </div>
@@ -14,7 +14,7 @@
           @click="$emit('update:selectedLeague', l)"
           :class="[
             'px-4 py-1.5 rounded-full font-bold text-sm transition-all duration-150 border cursor-pointer min-h-11',
-            selectedLeague === l ? 'bg-amber-500 text-white border-amber-500' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
+            selectedLeague === l ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
           ]">
           {{ l === 'all' ? '全部' : l }}
         </button>
@@ -24,14 +24,14 @@
       <div class="flex gap-2 mb-4 flex-wrap">
         <button @click="$emit('update:selectedTeam', null)" :class="[
           'px-4 py-2 rounded-2xl font-bold transition-all duration-150 border shadow-md cursor-pointer min-h-11',
-          selectedTeam === null ? 'bg-amber-500 text-white border-amber-500 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
+          selectedTeam === null ? 'bg-amber-500 text-white border-amber-500 scale-105' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
         ]">
           全部 ({{ pitchers.length }})
         </button>
         <!-- 中職六隊 -->
         <button v-for="team in cpblTeamsWithPitchers" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
           'px-3 py-3 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-1 cursor-pointer',
-          selectedTeam === team ? 'bg-amber-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
+          selectedTeam === team ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 scale-105' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
         ]">
           <img v-if="teamLogos[team]" :src="teamLogos[team]" class="w-16 h-16 object-contain" :alt="team" />
           <span class="text-2xl" v-else>⚾</span>
@@ -45,7 +45,7 @@
           @click="showOtherTeams = !showOtherTeams"
           :class="[
             'px-3 py-3 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-1 cursor-pointer',
-            isOtherTeamSelected ? 'bg-amber-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
+            isOtherTeamSelected ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 scale-105' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
           ]">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
@@ -59,7 +59,7 @@
         <template v-if="showOtherTeams">
           <button v-for="team in otherTeamsWithPitchers" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
             'px-3 py-2 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-0.5 cursor-pointer',
-            selectedTeam === team ? 'bg-amber-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
+            selectedTeam === team ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 scale-105' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
           ]">
             <span class="text-lg">⚾</span>
             <div class="text-center">
@@ -75,19 +75,19 @@
         <button v-for="pitcher in filteredPitchers" :key="pitcher.name + pitcher.number"
           @click="$emit('select', pitcher)"
           :disabled="playedPitchers.has(pitcher.name + pitcher.number)"
-          class="bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/40 disabled:opacity-50 p-2 rounded-lg transition-all duration-150 transform hover:scale-105 disabled:scale-100 text-left border border-amber-500/30 hover:border-amber-400/60 disabled:border-white/5 shadow-md cursor-pointer disabled:cursor-not-allowed">
+          class="bg-white hover:shadow-md disabled:bg-slate-50 disabled:opacity-50 p-2 rounded-lg transition-all duration-150 transform hover:scale-105 disabled:scale-100 text-left border border-amber-100 hover:border-amber-400 disabled:border-slate-100 shadow-sm cursor-pointer disabled:cursor-not-allowed">
           <div class="flex items-start gap-2">
-            <img v-if="pitcher.photo" :src="pitcher.photo" class="w-12 h-12 rounded-full object-cover border-2 border-amber-400/60 shadow-md flex-shrink-0" />
-            <div v-else class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-xl flex-shrink-0">⚾</div>
+            <img v-if="pitcher.photo" :src="pitcher.photo" class="w-12 h-12 rounded-full object-cover border-2 border-amber-300 shadow-md flex-shrink-0" />
+            <div v-else class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-xl flex-shrink-0">⚾</div>
             <div class="flex-1 min-w-0 flex flex-col justify-between">
               <div class="flex items-center gap-1 mb-1">
                 <span :class="[
-                  'text-white font-black leading-tight',
+                  'text-slate-900 font-black leading-tight',
                   pitcher.name.length > 6 ? 'text-sm' : pitcher.name.length > 4 ? 'text-base' : 'text-lg'
                 ]" :style="pitcher.name.length > 6 ? 'word-wrap: break-word; overflow-wrap: break-word;' : ''">{{ pitcher.name }}</span>
-                <span v-if="pitcher.song" class="text-xs text-amber-400">♪</span>
+                <span v-if="pitcher.song" class="text-xs text-amber-500">♪</span>
               </div>
-              <div class="text-xs text-amber-400 font-bold">#{{ pitcher.number }} · {{ pitcher.mainPosition }}</div>
+              <div class="text-xs text-amber-600 font-bold">#{{ pitcher.number }} · {{ pitcher.mainPosition }}</div>
             </div>
           </div>
         </button>
