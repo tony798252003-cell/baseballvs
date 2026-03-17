@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 
 // 球員過濾和計算 composable
 export function usePlayerFilters(roster, selectedTeam) {
-  const selectedLeague = ref('一軍') // '一軍' | '二軍' | 'all'
+  const selectedLeague = ref('一軍') // '一軍' | '二軍' | 'all' | 'coach'
   // 球隊列表
   const teams = computed(() => {
     const teamSet = new Set(roster.value.map(p => p.team))
@@ -18,6 +18,7 @@ export function usePlayerFilters(roster, selectedTeam) {
 
   // 判斷是否為投手守位的輔助函數
   const isPitcherPosition = (position) => {
+    if (!position) return false
     const pos = position.toUpperCase()
     return pos === 'P' || pos === 'SP' || pos === 'RP' || pos === 'CP'
   }
@@ -34,11 +35,11 @@ export function usePlayerFilters(roster, selectedTeam) {
     return false
   }
 
-  // 依 league 過濾的基礎名單（排除教練）
+  // 依 league 過濾的基礎名單
   const leagueRoster = computed(() => {
-    const base = roster.value.filter(p => !p.isCoach)
-    if (selectedLeague.value === 'all') return base
-    return base.filter(p => p.league === selectedLeague.value)
+    if (selectedLeague.value === 'coach') return roster.value.filter(p => p.isCoach)
+    if (selectedLeague.value === 'all') return roster.value
+    return roster.value.filter(p => !p.isCoach && p.league === selectedLeague.value)
   })
 
   // 打者：主要守位不是純投手的球員都可以打擊

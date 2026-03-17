@@ -10,13 +10,13 @@
 
       <!-- 一軍/二軍切換 -->
       <div class="flex gap-2 mb-3">
-        <button v-for="l in ['一軍', '二軍', 'all']" :key="l"
+        <button v-for="l in ['一軍', '二軍', 'all', 'coach']" :key="l"
           @click="$emit('update:selectedLeague', l)"
           :class="[
             'px-4 py-1.5 rounded-full font-bold text-sm transition-all duration-150 border cursor-pointer min-h-11',
             selectedLeague === l ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
           ]">
-          {{ l === 'all' ? '全部' : l }}
+          {{ l === 'all' ? '全部' : l === 'coach' ? '教練' : l }}
         </button>
       </div>
 
