@@ -1,17 +1,17 @@
 <template>
-  <div class="w-full h-full bg-gradient-to-br from-purple-200 via-pink-100 to-yellow-100 flex">
+  <div class="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex">
     <!-- 左側：球隊選擇與球員列表 -->
     <div class="w-2/3 h-full flex flex-col p-6 overflow-hidden">
       <div class="flex items-center justify-between mb-4">
         <div>
-          <h2 class="text-4xl font-black text-purple-600" style="text-shadow: 2px 2px 0px #fff">
-            {{ gameType === 'single' ? '⚡ 選擇打者' : (isSelectingAwayTeam ? '🏃 客隊打序' : '🏠 主隊打序') }}
+          <h2 class="text-4xl font-black text-white">
+            {{ gameType === 'single' ? '選擇打者' : (isSelectingAwayTeam ? '客隊打序' : '主隊打序') }}
           </h2>
-          <p v-if="gameType === 'versus'" class="text-sm text-purple-700 font-bold mt-1">
+          <p v-if="gameType === 'versus'" class="text-sm text-slate-400 font-bold mt-1">
             {{ isSelectingAwayTeam ? '先選擇客隊（上半局進攻）9位打者及投手' : '選擇主隊（下半局進攻）9位打者及投手' }}
           </p>
         </div>
-        <button @click="$emit('back')" class="bg-red-400 hover:bg-red-500 text-white px-6 py-3 rounded-2xl font-bold shadow-lg border-2 border-white">
+        <button @click="$emit('back')" class="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg transition-all duration-150 cursor-pointer min-h-11">
           ← 返回
         </button>
       </div>
@@ -21,8 +21,8 @@
         <button v-for="l in ['一軍', '二軍', 'all']" :key="l"
           @click="$emit('update:selected-league', l)"
           :class="[
-            'px-4 py-1.5 rounded-full font-bold text-sm transition border-2',
-            selectedLeague === l ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-blue-600 border-blue-300 hover:bg-blue-50'
+            'px-4 py-1.5 rounded-full font-bold text-sm transition-all duration-150 border cursor-pointer min-h-11',
+            selectedLeague === l ? 'bg-blue-500 text-white border-blue-500' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
           ]">
           {{ l === 'all' ? '全部' : l }}
         </button>
@@ -31,15 +31,15 @@
       <!-- 球隊與守位篩選 -->
       <div class="flex gap-2 mb-4 flex-wrap">
         <button @click="$emit('update:selectedTeam', null)" :class="[
-          'px-4 py-2 rounded-2xl font-bold transition-all border-2 border-white shadow-md',
-          selectedTeam === null ? 'bg-blue-400 text-white scale-105' : 'bg-white text-blue-600 hover:bg-blue-50'
+          'px-4 py-2 rounded-2xl font-bold transition-all duration-150 border shadow-md cursor-pointer min-h-11',
+          selectedTeam === null ? 'bg-blue-500 text-white border-blue-500 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
         ]">
           全部 ({{ batters.length }})
         </button>
         <!-- 中職六隊 -->
         <button v-for="team in cpblTeamsWithBatters" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
-          'px-3 py-3 rounded-2xl font-bold transition-all border-2 border-white shadow-md flex flex-col items-center gap-1',
-          selectedTeam === team ? 'bg-blue-400 text-white scale-105' : 'bg-white text-blue-600 hover:bg-blue-50'
+          'px-3 py-3 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-1 cursor-pointer',
+          selectedTeam === team ? 'bg-blue-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
         ]">
           <img v-if="teamLogos[team]" :src="teamLogos[team]" class="w-16 h-16 object-contain" :alt="team" />
           <span class="text-2xl" v-else>⚾</span>
@@ -52,10 +52,12 @@
         <button v-if="otherTeamsWithBatters.length > 0"
           @click="showOtherTeams = !showOtherTeams"
           :class="[
-            'px-3 py-3 rounded-2xl font-bold transition-all border-2 border-white shadow-md flex flex-col items-center gap-1',
-            isOtherTeamSelected ? 'bg-blue-400 text-white scale-105' : 'bg-white text-blue-600 hover:bg-blue-50'
+            'px-3 py-3 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-1 cursor-pointer',
+            isOtherTeamSelected ? 'bg-blue-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
           ]">
-          <span class="text-2xl">🌍</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
+          </svg>
           <div class="text-center">
             <div class="text-xs font-bold">其他球隊</div>
             <div class="text-xs opacity-75">{{ showOtherTeams ? '▲ 收折' : '▼ 展開' }}</div>
@@ -64,8 +66,8 @@
         <!-- 展開後的其他球隊 -->
         <template v-if="showOtherTeams">
           <button v-for="team in otherTeamsWithBatters" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
-            'px-3 py-2 rounded-2xl font-bold transition-all border-2 shadow-md flex flex-col items-center gap-0.5',
-            selectedTeam === team ? 'bg-blue-400 text-white border-blue-400 scale-105' : 'bg-white/80 text-blue-600 border-blue-200 hover:bg-blue-50'
+            'px-3 py-2 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-0.5 cursor-pointer',
+            selectedTeam === team ? 'bg-blue-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
           ]">
             <span class="text-lg">⚾</span>
             <div class="text-center">
@@ -81,19 +83,19 @@
         <button v-for="player in filteredBatters" :key="player.name + player.number"
           @click="$emit('add-player', player)"
           :disabled="currentLineup.includes(player)"
-          class="bg-white hover:bg-yellow-50 disabled:bg-gray-100 disabled:opacity-40 p-2 rounded-lg transition-all transform hover:scale-105 text-left border-2 border-blue-300 hover:border-blue-500 disabled:border-gray-300 shadow-md">
+          class="bg-slate-800/80 hover:bg-slate-700/80 disabled:bg-slate-800/40 disabled:opacity-40 p-2 rounded-lg transition-all duration-150 transform hover:scale-105 text-left border border-white/10 hover:border-blue-400/50 disabled:border-white/5 shadow-md cursor-pointer disabled:cursor-not-allowed">
           <div class="flex items-start gap-2">
-            <img v-if="player.photo" :src="player.photo" class="w-12 h-12 rounded-full object-cover border-2 border-blue-400 shadow-md flex-shrink-0" />
-            <div v-else class="w-12 h-12 rounded-full bg-blue-200 flex items-center justify-center text-xl flex-shrink-0">⚾</div>
+            <img v-if="player.photo" :src="player.photo" class="w-12 h-12 rounded-full object-cover border-2 border-blue-400/60 shadow-md flex-shrink-0" />
+            <div v-else class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-xl flex-shrink-0">⚾</div>
             <div class="flex-1 min-w-0 flex flex-col justify-between">
               <div class="flex items-center gap-1 mb-1">
                 <span :class="[
-                  'text-gray-800 font-black leading-tight',
+                  'text-white font-black leading-tight',
                   player.name.length > 6 ? 'text-sm' : player.name.length > 4 ? 'text-base' : 'text-lg'
                 ]" :style="player.name.length > 6 ? 'word-wrap: break-word; overflow-wrap: break-word;' : ''">{{ player.name }}</span>
-                <span v-if="player.song" class="text-xs">🎵</span>
+                <span v-if="player.song" class="text-xs text-amber-400">♪</span>
               </div>
-              <div class="text-xs text-blue-600 font-bold">#{{ player.number }} · {{ player.mainPosition }}</div>
+              <div class="text-xs text-slate-400 font-bold">#{{ player.number }} · {{ player.mainPosition }}</div>
             </div>
           </div>
         </button>
@@ -101,109 +103,109 @@
     </div>
 
     <!-- 右側：已選打序 -->
-    <div class="w-1/3 h-full bg-gradient-to-br from-blue-200 to-purple-200 p-4 border-l-4 border-yellow-400 flex flex-col shadow-xl overflow-hidden relative">
-      <h3 class="text-xl font-black text-blue-600 mb-2" style="text-shadow: 2px 2px 0px #fff">
-        {{ gameType === 'single' ? '⚡ 打者' : (isSelectingAwayTeam ? '🏃 客隊' : '🏠 主隊') }} ({{ currentLineup.length }}/9)
+    <div class="w-1/3 h-full bg-white/5 backdrop-blur-md p-4 border-l border-amber-400/30 flex flex-col shadow-xl overflow-hidden relative">
+      <h3 class="text-xl font-black text-white mb-2">
+        {{ gameType === 'single' ? '打者' : (isSelectingAwayTeam ? '客隊' : '主隊') }} ({{ currentLineup.length }}/9)
       </h3>
-      
+
       <!-- 9個棒次固定顯示，不捲動 - 為投手區域預留空間 -->
       <div class="flex flex-col justify-between" style="height: calc(100% - 280px); min-height: 300px; overflow-y: auto;">
         <!-- 已選擇的打者 -->
         <div v-for="(player, index) in currentLineup" :key="index"
           @click="$emit('replace-player', index)"
           :class="[
-            'bg-white p-1.5 rounded-lg flex items-center gap-2 shadow-md cursor-pointer hover:bg-blue-50 transition-colors',
-            replacingIndex === index ? 'border-3 border-yellow-400 animate-pulse' : 'border-2 border-blue-300'
+            'bg-slate-700 p-1.5 rounded-lg flex items-center gap-2 shadow-md cursor-pointer hover:bg-slate-600 transition-colors duration-150',
+            replacingIndex === index ? 'border-2 border-amber-400 animate-pulse' : 'border border-white/10'
           ]">
-          <div class="text-xl font-black text-blue-500 w-7">{{ index + 1 }}</div>
-          <img v-if="player.photo" :src="player.photo" class="w-9 h-9 rounded-full object-cover border-2 border-yellow-400" />
-          <div v-else class="w-9 h-9 rounded-full bg-blue-200 flex items-center justify-center text-base">⚾</div>
+          <div class="text-xl font-black text-blue-400 w-7">{{ index + 1 }}</div>
+          <img v-if="player.photo" :src="player.photo" class="w-9 h-9 rounded-full object-cover border-2 border-amber-400/60" />
+          <div v-else class="w-9 h-9 rounded-full bg-slate-600 flex items-center justify-center text-base">⚾</div>
           <div class="flex-1 min-w-0">
             <div :class="[
-              'text-gray-800 font-black leading-tight',
+              'text-white font-black leading-tight',
               player.name.length > 5 ? 'text-xs break-words' : 'text-sm',
               player.name.length <= 5 ? 'truncate' : ''
             ]">{{ player.name }}</div>
-            <div class="text-xs text-blue-600 font-bold truncate">#{{ player.number }}</div>
+            <div class="text-xs text-slate-400 font-bold truncate">#{{ player.number }}</div>
           </div>
         </div>
-        
+
         <!-- 未選擇的棒次 -->
         <div v-for="i in (9 - currentLineup.length)" :key="'empty-' + i"
           :class="[
-            'p-1.5 rounded-lg flex items-center gap-2 transition-all',
-            i === 1 ? 'bg-yellow-100 border-3 border-yellow-400 animate-pulse shadow-lg' : 'bg-white/50 border-2 border-dashed border-blue-300'
+            'p-1.5 rounded-lg flex items-center gap-2 transition-all duration-150',
+            i === 1 ? 'bg-amber-400/10 border-2 border-amber-400 animate-pulse shadow-lg' : 'border border-dashed border-slate-600'
           ]">
           <div :class="[
             'text-xl font-black w-7',
-            i === 1 ? 'text-yellow-600' : 'text-gray-300'
+            i === 1 ? 'text-amber-400' : 'text-slate-600'
           ]">{{ currentLineup.length + i }}</div>
           <div :class="[
             'italic font-bold text-xs',
-            i === 1 ? 'text-yellow-600' : 'text-gray-400'
-          ]">{{ i === 1 ? '👈 選第' + (currentLineup.length + 1) + '棒' : '未選擇' }}</div>
+            i === 1 ? 'text-amber-400' : 'text-slate-600'
+          ]">{{ i === 1 ? '← 選第' + (currentLineup.length + 1) + '棒' : '未選擇' }}</div>
         </div>
       </div>
 
       <!-- 投手選擇和按鈕區域 - 固定在底部 -->
-      <div class="absolute bottom-4 left-4 right-4 bg-gradient-to-br from-blue-200 to-purple-200 pt-3 pb-1">
+      <div class="absolute bottom-4 left-4 right-4 bg-slate-900/90 pt-3 pb-1 rounded-xl px-3">
       <!-- 投手選擇 -->
       <div class="mb-2 flex-shrink-0">
-        <h3 class="text-base font-black text-orange-600 mb-1.5" style="text-shadow: 1px 1px 0px #fff">🔥 {{ gameType === 'versus' && !isSelectingAwayTeam ? '主隊投手' : '對戰投手' }}</h3>
-        <div v-if="currentPitcher" @click="$emit('select-pitcher')" class="bg-white p-2 rounded-lg flex items-center gap-2 border-2 border-orange-300 shadow-md cursor-pointer hover:bg-orange-50 transition-colors">
-          <img v-if="currentPitcher.photo" :src="currentPitcher.photo" class="w-9 h-9 rounded-full object-cover border-2 border-orange-400" />
-          <div v-else class="w-9 h-9 rounded-full bg-orange-200 flex items-center justify-center text-base">🔥</div>
+        <h3 class="text-base font-black text-amber-400 mb-1.5">{{ gameType === 'versus' && !isSelectingAwayTeam ? '主隊投手' : '對戰投手' }}</h3>
+        <div v-if="currentPitcher" @click="$emit('select-pitcher')" class="bg-slate-700 p-2 rounded-lg flex items-center gap-2 border border-amber-500/40 shadow-md cursor-pointer hover:bg-slate-600 transition-colors duration-150">
+          <img v-if="currentPitcher.photo" :src="currentPitcher.photo" class="w-9 h-9 rounded-full object-cover border-2 border-amber-400/60" />
+          <div v-else class="w-9 h-9 rounded-full bg-slate-600 flex items-center justify-center text-base">⚾</div>
           <div class="flex-1 min-w-0">
-            <div class="text-gray-800 font-black text-sm truncate">{{ currentPitcher.name }}</div>
-            <div class="text-xs text-orange-600 font-bold">#{{ currentPitcher.number }}</div>
+            <div class="text-white font-black text-sm truncate">{{ currentPitcher.name }}</div>
+            <div class="text-xs text-amber-400 font-bold">#{{ currentPitcher.number }}</div>
           </div>
-          <button @click.stop="$emit('clear-pitcher')" class="text-red-500 hover:text-red-600 hover:bg-red-100 p-1 rounded-full flex-shrink-0">
+          <button @click.stop="$emit('clear-pitcher')" class="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-1 rounded-full flex-shrink-0 cursor-pointer">
             <XCircleIcon :size="16" />
           </button>
         </div>
-        <button v-else @click="$emit('select-pitcher')" 
+        <button v-else @click="$emit('select-pitcher')"
           :disabled="currentLineup.length < 9"
           :class="[
-            'w-full py-2.5 rounded-lg font-black text-sm transition shadow-lg border-2 border-white',
-            currentLineup.length < 9 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-orange-400 hover:bg-orange-500 text-white animate-pulse'
+            'w-full py-2.5 rounded-lg font-black text-sm transition-all duration-150 shadow-lg border cursor-pointer min-h-11',
+            currentLineup.length < 9 ? 'bg-slate-700 text-slate-500 cursor-not-allowed border-slate-600' : 'bg-amber-500 hover:bg-amber-400 text-white animate-pulse border-amber-400'
           ]">
-          {{ currentLineup.length < 9 ? `選擇打者 (${currentLineup.length}/9)` : '選擇投手 🔥' }}
+          {{ currentLineup.length < 9 ? `選擇打者 (${currentLineup.length}/9)` : '選擇投手' }}
         </button>
       </div>
 
       <button @click="$emit('random-select')" v-if="currentLineup.length === 0"
-        class="w-full bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-lg font-bold text-sm mb-1.5 transition shadow-lg border-2 border-white flex-shrink-0">
-        🎲 隨機選擇
+        class="w-full bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-xl font-bold text-sm mb-1.5 transition-all duration-150 shadow-lg cursor-pointer min-h-11 flex-shrink-0">
+        隨機選擇
       </button>
       <button @click="$emit('clear-lineup')" v-if="currentLineup.length > 0"
-        class="w-full bg-red-400 hover:bg-red-500 text-white py-1.5 rounded-lg font-bold text-xs mb-1.5 transition shadow-lg border-2 border-white flex-shrink-0">
-        🗑️ 清空打序
+        class="w-full bg-red-500/80 hover:bg-red-500 text-white py-1.5 rounded-xl font-bold text-xs mb-1.5 transition-all duration-150 shadow-lg cursor-pointer flex-shrink-0">
+        清空打序
       </button>
-      
+
       <!-- 對戰模式的確認按鈕 -->
       <div v-if="gameType === 'versus'" class="flex-shrink-0">
-        <button v-if="isSelectingAwayTeam" @click="$emit('confirm-away')" 
+        <button v-if="isSelectingAwayTeam" @click="$emit('confirm-away')"
           :disabled="currentLineup.length < 9 || !currentPitcher"
-          class="w-full bg-gradient-to-r from-blue-400 to-cyan-500 hover:from-blue-500 hover:to-cyan-600 disabled:bg-gray-300 disabled:opacity-50 text-white py-3 rounded-lg font-black text-base transition-all transform hover:scale-105 disabled:scale-100 flex items-center justify-center gap-2 shadow-xl border-2 border-white mb-1.5">
+          class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:bg-slate-700 disabled:opacity-50 text-white py-3 rounded-xl font-black text-base transition-all duration-150 transform hover:scale-105 disabled:scale-100 flex items-center justify-center gap-2 shadow-xl border border-white/10 cursor-pointer disabled:cursor-not-allowed min-h-11 mb-1.5">
           <PlayIcon :fill="true" />
           {{ currentLineup.length < 9 ? `選擇打者 (${currentLineup.length}/9)` : (!currentPitcher ? '選擇投手' : '確認客隊 →') }}
         </button>
-        <button v-else @click="$emit('start-game')" 
+        <button v-else @click="$emit('start-game')"
           :disabled="currentLineup.length < 9 || !currentPitcher"
-          class="w-full bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 disabled:bg-gray-300 disabled:opacity-50 text-white py-3 rounded-lg font-black text-base transition-all transform hover:scale-105 disabled:scale-100 flex items-center justify-center gap-2 shadow-xl border-2 border-white">
+          class="w-full bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 disabled:bg-slate-700 disabled:opacity-50 text-white py-3 rounded-xl font-black text-base transition-all duration-150 transform hover:scale-105 disabled:scale-100 flex items-center justify-center gap-2 shadow-xl border border-white/10 cursor-pointer disabled:cursor-not-allowed min-h-11">
           <PlayIcon :fill="true" />
           {{ currentLineup.length < 9 ? `選擇打者 (${currentLineup.length}/9)` : (!currentPitcher ? '選擇投手' : '開始比賽！') }}
         </button>
         <button v-if="!isSelectingAwayTeam" @click="$emit('back-to-away')"
-          class="w-full bg-gray-400 hover:bg-gray-500 text-white py-2 rounded-lg font-bold text-xs transition shadow-lg border-2 border-white mt-1.5">
+          class="w-full bg-slate-600 hover:bg-slate-500 text-white py-2 rounded-xl font-bold text-xs transition-all duration-150 shadow-lg cursor-pointer mt-1.5 min-h-11">
           ← 返回客隊設定
         </button>
       </div>
-      
+
       <!-- 單人模式的開始按鈕 -->
-      <button v-else @click="$emit('start-game')" 
+      <button v-else @click="$emit('start-game')"
         :disabled="currentLineup.length < 9 || !currentPitcher"
-        class="w-full bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 disabled:bg-gray-300 disabled:opacity-50 text-white py-3 rounded-lg font-black text-base transition-all transform hover:scale-105 disabled:scale-100 flex items-center justify-center gap-2 shadow-xl border-2 border-white flex-shrink-0">
+        class="w-full bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 disabled:bg-slate-700 disabled:opacity-50 text-white py-3 rounded-xl font-black text-base transition-all duration-150 transform hover:scale-105 disabled:scale-100 flex items-center justify-center gap-2 shadow-xl border border-white/10 cursor-pointer disabled:cursor-not-allowed min-h-11 flex-shrink-0">
         <PlayIcon :fill="true" />
         {{ currentLineup.length < 9 ? `選擇打者 (${currentLineup.length}/9)` : (!currentPitcher ? '選擇投手' : '開始比賽！') }}
       </button>

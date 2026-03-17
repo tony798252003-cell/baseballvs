@@ -1,9 +1,9 @@
 <template>
-  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-    <div class="bg-gradient-to-br from-orange-100 to-red-100 rounded-3xl p-8 max-w-4xl max-h-[80vh] flex flex-col border-4 border-orange-400 shadow-2xl">
+  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="bg-slate-900 border border-white/10 rounded-3xl p-8 max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl">
       <div class="flex items-center justify-between mb-6">
-        <h2 class="text-4xl font-black text-orange-600" style="text-shadow: 2px 2px 0px #fff">🔥 {{ title }}</h2>
-        <button @click="$emit('close')" class="text-red-500 hover:text-red-600 hover:bg-red-100 p-3 rounded-full">
+        <h2 class="text-4xl font-black text-white">{{ title }}</h2>
+        <button @click="$emit('close')" class="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-3 rounded-full transition-all duration-150 cursor-pointer">
           <XCircleIcon :size="32" />
         </button>
       </div>
@@ -13,8 +13,8 @@
         <button v-for="l in ['一軍', '二軍', 'all']" :key="l"
           @click="$emit('update:selectedLeague', l)"
           :class="[
-            'px-4 py-1.5 rounded-full font-bold text-sm transition border-2',
-            selectedLeague === l ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-orange-600 border-orange-300 hover:bg-orange-50'
+            'px-4 py-1.5 rounded-full font-bold text-sm transition-all duration-150 border cursor-pointer min-h-11',
+            selectedLeague === l ? 'bg-amber-500 text-white border-amber-500' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
           ]">
           {{ l === 'all' ? '全部' : l }}
         </button>
@@ -23,15 +23,15 @@
       <!-- 球隊篩選 -->
       <div class="flex gap-2 mb-4 flex-wrap">
         <button @click="$emit('update:selectedTeam', null)" :class="[
-          'px-4 py-2 rounded-2xl font-bold transition-all border-2 border-white shadow-md',
-          selectedTeam === null ? 'bg-orange-400 text-white scale-105' : 'bg-white text-orange-600 hover:bg-orange-50'
+          'px-4 py-2 rounded-2xl font-bold transition-all duration-150 border shadow-md cursor-pointer min-h-11',
+          selectedTeam === null ? 'bg-amber-500 text-white border-amber-500 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
         ]">
           全部 ({{ pitchers.length }})
         </button>
         <!-- 中職六隊 -->
         <button v-for="team in cpblTeamsWithPitchers" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
-          'px-3 py-3 rounded-2xl font-bold transition-all border-2 border-white shadow-md flex flex-col items-center gap-1',
-          selectedTeam === team ? 'bg-orange-400 text-white scale-105' : 'bg-white text-orange-600 hover:bg-orange-50'
+          'px-3 py-3 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-1 cursor-pointer',
+          selectedTeam === team ? 'bg-amber-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
         ]">
           <img v-if="teamLogos[team]" :src="teamLogos[team]" class="w-16 h-16 object-contain" :alt="team" />
           <span class="text-2xl" v-else>⚾</span>
@@ -44,10 +44,12 @@
         <button v-if="otherTeamsWithPitchers.length > 0"
           @click="showOtherTeams = !showOtherTeams"
           :class="[
-            'px-3 py-3 rounded-2xl font-bold transition-all border-2 border-white shadow-md flex flex-col items-center gap-1',
-            isOtherTeamSelected ? 'bg-orange-400 text-white scale-105' : 'bg-white text-orange-600 hover:bg-orange-50'
+            'px-3 py-3 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-1 cursor-pointer',
+            isOtherTeamSelected ? 'bg-amber-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
           ]">
-          <span class="text-2xl">🌍</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
+          </svg>
           <div class="text-center">
             <div class="text-xs font-bold">其他球隊</div>
             <div class="text-xs opacity-75">{{ showOtherTeams ? '▲ 收折' : '▼ 展開' }}</div>
@@ -56,8 +58,8 @@
         <!-- 展開後的其他球隊 -->
         <template v-if="showOtherTeams">
           <button v-for="team in otherTeamsWithPitchers" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
-            'px-3 py-2 rounded-2xl font-bold transition-all border-2 shadow-md flex flex-col items-center gap-0.5',
-            selectedTeam === team ? 'bg-orange-400 text-white border-orange-400 scale-105' : 'bg-white/80 text-orange-600 border-orange-200 hover:bg-orange-50'
+            'px-3 py-2 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-0.5 cursor-pointer',
+            selectedTeam === team ? 'bg-amber-500/30 text-white border-amber-400 scale-105' : 'bg-white/10 text-slate-300 border-white/20 hover:bg-white/20'
           ]">
             <span class="text-lg">⚾</span>
             <div class="text-center">
@@ -73,19 +75,19 @@
         <button v-for="pitcher in filteredPitchers" :key="pitcher.name + pitcher.number"
           @click="$emit('select', pitcher)"
           :disabled="playedPitchers.has(pitcher.name + pitcher.number)"
-          class="bg-white hover:bg-orange-50 disabled:bg-gray-200 disabled:opacity-50 p-2 rounded-lg transition-all transform hover:scale-105 disabled:scale-100 text-left border-2 border-orange-300 hover:border-orange-500 disabled:border-gray-300 shadow-md">
+          class="bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/40 disabled:opacity-50 p-2 rounded-lg transition-all duration-150 transform hover:scale-105 disabled:scale-100 text-left border border-amber-500/30 hover:border-amber-400/60 disabled:border-white/5 shadow-md cursor-pointer disabled:cursor-not-allowed">
           <div class="flex items-start gap-2">
-            <img v-if="pitcher.photo" :src="pitcher.photo" class="w-12 h-12 rounded-full object-cover border-2 border-orange-400 shadow-md flex-shrink-0" />
-            <div v-else class="w-12 h-12 rounded-full bg-orange-200 flex items-center justify-center text-xl flex-shrink-0">🔥</div>
+            <img v-if="pitcher.photo" :src="pitcher.photo" class="w-12 h-12 rounded-full object-cover border-2 border-amber-400/60 shadow-md flex-shrink-0" />
+            <div v-else class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-xl flex-shrink-0">⚾</div>
             <div class="flex-1 min-w-0 flex flex-col justify-between">
               <div class="flex items-center gap-1 mb-1">
                 <span :class="[
-                  'text-gray-800 font-black leading-tight',
+                  'text-white font-black leading-tight',
                   pitcher.name.length > 6 ? 'text-sm' : pitcher.name.length > 4 ? 'text-base' : 'text-lg'
                 ]" :style="pitcher.name.length > 6 ? 'word-wrap: break-word; overflow-wrap: break-word;' : ''">{{ pitcher.name }}</span>
-                <span v-if="pitcher.song" class="text-xs">🎵</span>
+                <span v-if="pitcher.song" class="text-xs text-amber-400">♪</span>
               </div>
-              <div class="text-xs text-orange-600 font-bold">#{{ pitcher.number }} · {{ pitcher.mainPosition }}</div>
+              <div class="text-xs text-amber-400 font-bold">#{{ pitcher.number }} · {{ pitcher.mainPosition }}</div>
             </div>
           </div>
         </button>
