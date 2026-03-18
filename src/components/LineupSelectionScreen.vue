@@ -6,13 +6,13 @@
         <div>
           <h2 class="text-4xl font-black text-slate-900">
             <template v-if="isSelectingPitcher">
-              {{ gameType === 'versus' ? (isSelectingAwayTeam ? '客隊投手' : '主隊投手') : '選擇投手' }}
+              {{ gameType !== 'single' ? (isSelectingAwayTeam ? '客隊投手' : '主隊投手') : '選擇投手' }}
             </template>
             <template v-else>
               {{ gameType === 'single' ? '選擇打者' : (isSelectingAwayTeam ? '客隊打序' : '主隊打序') }}
             </template>
           </h2>
-          <p v-if="gameType === 'versus'" class="text-sm text-slate-500 font-bold mt-1">
+          <p v-if="gameType !== 'single'" class="text-sm text-slate-500 font-bold mt-1">
             <template v-if="isSelectingPitcher">
               從左側選擇本局先發投手
             </template>
@@ -213,6 +213,18 @@
             ]">{{ player.name }}</div>
             <div class="text-xs text-slate-500 font-bold truncate">#{{ player.number }}</div>
           </div>
+          <select v-if="draftLineupPositions"
+            :value="draftLineupPositions[index]"
+            @change="emit('update:draft-lineup-position', index, $event.target.value)"
+            @click.stop
+            class="text-xs bg-slate-100 border border-slate-300 rounded px-1 py-0.5 ml-1 w-14 flex-shrink-0">
+            <option value="">--</option>
+            <option v-for="pos in ['C','1B','2B','3B','SS','LF','CF','RF','DH']" :key="pos"
+              :value="pos"
+              :disabled="draftLineupPositions.includes(pos) && draftLineupPositions[index] !== pos">
+              {{ pos }}
+            </option>
+          </select>
         </div>
 
         <!-- 未選擇的棒次 -->
@@ -236,7 +248,7 @@
       <div class="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-sm border border-slate-100 pt-3 pb-1 rounded-xl px-3 shadow-md">
         <!-- 投手選擇 -->
         <div class="mb-2 flex-shrink-0">
-          <h3 class="text-base font-black text-amber-600 mb-1.5">{{ gameType === 'versus' && !isSelectingAwayTeam ? '主隊投手' : '對戰投手' }}</h3>
+          <h3 class="text-base font-black text-amber-600 mb-1.5">{{ gameType !== 'single' && !isSelectingAwayTeam ? '主隊投手' : '對戰投手' }}</h3>
           <div v-if="currentPitcher" @click="selectingPitcher = true" class="bg-white border border-amber-200 p-2 rounded-lg flex items-center gap-2 shadow-sm cursor-pointer hover:shadow-md hover:border-amber-400 transition-all duration-150">
             <img v-if="currentPitcher.photo" :src="currentPitcher.photo" class="w-9 h-9 rounded-full object-cover border-2 border-amber-400/60" />
             <div v-else class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-base">⚾</div>
@@ -262,7 +274,7 @@
           </button>
         </div>
 
-        <button @click="$emit('random-select')" v-if="currentLineup.length === 0"
+        <button @click="$emit('random-select')" v-if="currentLineup.length === 0 && gameType !== 'advanced'"
           class="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl font-bold text-sm mb-1.5 transition-all duration-150 shadow-lg cursor-pointer min-h-11 flex-shrink-0">
           隨機選擇
         </button>
@@ -271,8 +283,8 @@
           清空打序
         </button>
 
-        <!-- 對戰模式的確認按鈕 -->
-        <div v-if="gameType === 'versus'" class="flex-shrink-0">
+        <!-- 對戰模式/進階模式的確認按鈕 -->
+        <div v-if="gameType === 'versus' || gameType === 'advanced'" class="flex-shrink-0">
           <button v-if="isSelectingAwayTeam" @click="$emit('confirm-away')"
             :disabled="currentLineup.length < 9 || !currentPitcher"
             class="w-full bg-gradient-to-r from-emerald-500 to-indigo-600 hover:from-emerald-400 hover:to-indigo-500 disabled:bg-slate-100 disabled:opacity-50 text-white py-3 rounded-xl font-black text-base transition-all duration-150 transform hover:scale-105 disabled:scale-100 flex items-center justify-center gap-2 shadow-lg cursor-pointer disabled:cursor-not-allowed min-h-11 mb-1.5">
@@ -292,7 +304,7 @@
         </div>
 
         <!-- 單人模式的開始按鈕 -->
-        <button v-else @click="$emit('start-game')"
+        <button v-else-if="gameType === 'single'" @click="$emit('start-game')"
           :disabled="currentLineup.length < 9 || !currentPitcher"
           class="w-full bg-gradient-to-r from-emerald-500 to-indigo-600 hover:from-emerald-400 hover:to-indigo-500 disabled:bg-slate-100 disabled:opacity-50 text-white py-3 rounded-xl font-black text-base transition-all duration-150 transform hover:scale-105 disabled:scale-100 flex items-center justify-center gap-2 shadow-lg cursor-pointer disabled:cursor-not-allowed min-h-11 flex-shrink-0">
           <PlayIcon :fill="true" />
@@ -326,7 +338,8 @@ const props = defineProps({
   currentPitcher: Object,
   replacingIndex: Number,
   selectedLeague: String,
-  isSelectingAwayTeam: Boolean
+  isSelectingAwayTeam: Boolean,
+  draftLineupPositions: { type: Array, default: null },
 });
 
 const emit = defineEmits([
@@ -342,7 +355,8 @@ const emit = defineEmits([
   'confirm-away',
   'start-game',
   'back-to-away',
-  'update:selected-league'
+  'update:selected-league',
+  'update:draft-lineup-position'
 ]);
 
 const showOtherTeams = ref(false);

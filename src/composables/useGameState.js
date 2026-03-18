@@ -10,8 +10,8 @@ export function useGameState() {
   const selectedPitcher = ref(null)
   
   // 對戰模式數據
-  const awayTeam = ref({ lineup: [], pitcher: null, batterIndex: 0 })
-  const homeTeam = ref({ lineup: [], pitcher: null, batterIndex: 0 })
+  const awayTeam = ref({ lineup: [], pitcher: null, batterIndex: 0, lineupPositions: [], pendingPositionFills: [] })
+  const homeTeam = ref({ lineup: [], pitcher: null, batterIndex: 0, lineupPositions: [], pendingPositionFills: [] })
   const isSelectingAwayTeam = ref(true)
   const needHomeTeamIntro = ref(false)
   
@@ -47,6 +47,14 @@ export function useGameState() {
   const isMuted = ref(false)
   const replacingIndex = ref(-1)
   
+  // 進階模式：當前進攻隊的守位陣列與待補清單
+  const activeLineupPositions = computed(() =>
+    isTop.value ? awayTeam.value.lineupPositions : homeTeam.value.lineupPositions
+  )
+  const activePendingFills = computed(() =>
+    isTop.value ? awayTeam.value.pendingPositionFills : homeTeam.value.pendingPositionFills
+  )
+
   // 計算當前打者
   const currentPlayer = computed(() => {
     if (lineup.value.length === 0) return null
@@ -67,6 +75,10 @@ export function useGameState() {
     strikes.value = 0
     playedBatters.value = new Set()
     playedPitchers.value = new Set()
+    awayTeam.value.lineupPositions = []
+    awayTeam.value.pendingPositionFills = []
+    homeTeam.value.lineupPositions = []
+    homeTeam.value.pendingPositionFills = []
     inningScores.value = {
       away: Array(9).fill(undefined).map((_, i) => i === 0 ? 0 : undefined),
       home: Array(9).fill(undefined).map((_, i) => i === 0 ? 0 : undefined)
@@ -141,7 +153,9 @@ export function useGameState() {
     isMuted,
     replacingIndex,
     currentPlayer,
-    
+    activeLineupPositions,
+    activePendingFills,
+
     // 方法
     resetGameState,
     switchTeams

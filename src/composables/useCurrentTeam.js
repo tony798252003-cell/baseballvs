@@ -5,13 +5,13 @@ export function useCurrentTeam(gameType, isSelectingAwayTeam, lineup, selectedPi
   // 當前正在編輯的陣容（根據遊戲模式和選擇狀態）
   const currentLineup = computed({
     get: () => {
-      if (gameType.value === 'versus') {
+      if (gameType.value === 'versus' || gameType.value === 'advanced') {
         return isSelectingAwayTeam.value ? awayTeam.value.lineup : homeTeam.value.lineup
       }
       return lineup.value
     },
     set: (val) => {
-      if (gameType.value === 'versus') {
+      if (gameType.value === 'versus' || gameType.value === 'advanced') {
         if (isSelectingAwayTeam.value) {
           awayTeam.value.lineup = val
         } else {
@@ -26,13 +26,13 @@ export function useCurrentTeam(gameType, isSelectingAwayTeam, lineup, selectedPi
   // 當前正在編輯的投手（根據遊戲模式和選擇狀態）
   const currentPitcher = computed({
     get: () => {
-      if (gameType.value === 'versus') {
+      if (gameType.value === 'versus' || gameType.value === 'advanced') {
         return isSelectingAwayTeam.value ? awayTeam.value.pitcher : homeTeam.value.pitcher
       }
       return selectedPitcher.value
     },
     set: (val) => {
-      if (gameType.value === 'versus') {
+      if (gameType.value === 'versus' || gameType.value === 'advanced') {
         if (isSelectingAwayTeam.value) {
           awayTeam.value.pitcher = val
         } else {

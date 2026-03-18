@@ -46,7 +46,7 @@
             <div class="text-center border-x-2 lg:border-x-4 border-slate-700 px-3 lg:px-6">
               <div class="text-xs text-slate-400 font-bold uppercase">局數</div>
               <div class="text-2xl lg:text-3xl font-black mb-1">
-                {{ gameType === 'versus' ? (isTop ? '▲' : '▼') : '' }} {{ inning }}
+                {{ gameType !== 'single' ? (isTop ? '▲' : '▼') : '' }} {{ inning }}
               </div>
               <div class="flex justify-center gap-1 lg:gap-2 mb-1">
                 <div v-for="i in 2" :key="i" :class="[

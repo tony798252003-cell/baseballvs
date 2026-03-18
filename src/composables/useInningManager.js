@@ -46,7 +46,7 @@ export function useInningManager(gameState, showToast) {
   // 檢查遊戲是否結束（9局以上）
   const checkGameEnd = () => {
     if (inning.value > 9) {
-      if (gameType.value === 'versus') {
+      if (gameType.value !== 'single') {
         showToast(TEXTS.game.gameOver(score.away, score.home), TEXTS.toast.alert)
       } else {
         showToast(TEXTS.game.gameOverSingle(score.away), TEXTS.toast.alert)

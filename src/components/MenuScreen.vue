@@ -34,7 +34,7 @@
       </div>
 
       <!-- 遊戲模式選擇 -->
-      <div v-if="!isLoading && !loadError" class="grid grid-cols-2 gap-6 mb-8">
+      <div v-if="!isLoading && !loadError" class="grid grid-cols-3 gap-4 mb-8">
         <button @click="$emit('select-mode', 'single')"
           class="bg-indigo-600 hover:bg-indigo-500 p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-150 transform hover:scale-105 cursor-pointer min-h-11 flex flex-col items-center justify-center gap-2 border-l-4 border-indigo-400">
           <div class="text-3xl font-black text-white leading-tight">單人模式</div>
@@ -44,6 +44,11 @@
           class="bg-amber-500 hover:bg-amber-400 p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-150 transform hover:scale-105 cursor-pointer min-h-11 flex flex-col items-center justify-center gap-2 border-l-4 border-amber-300">
           <div class="text-3xl font-black text-white leading-tight">對戰模式</div>
           <div class="text-amber-100 font-bold text-base">攻守交換</div>
+        </button>
+        <button @click="$emit('select-mode', 'advanced')"
+          class="bg-emerald-600 hover:bg-emerald-500 p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-150 transform hover:scale-105 cursor-pointer min-h-11 flex flex-col items-center justify-center gap-2 border-l-4 border-emerald-400">
+          <div class="text-3xl font-black text-white leading-tight">進階模式</div>
+          <div class="text-emerald-100 font-bold text-base">嚴格守位</div>
         </button>
       </div>
 

@@ -72,11 +72,11 @@ export function useGameInitialization(gameState, showToast) {
     playedBatters.value = new Set()
     playedPitchers.value = new Set([
       selectedPitcher.value && `${selectedPitcher.value.name}${selectedPitcher.value.number}`,
-      gameType.value === 'versus' && awayTeam.value.pitcher && `${awayTeam.value.pitcher.name}${awayTeam.value.pitcher.number}`
+      gameType.value !== 'single' && awayTeam.value.pitcher && `${awayTeam.value.pitcher.name}${awayTeam.value.pitcher.number}`
     ].filter(Boolean))
     
     // 設定需要主隊介紹的標記
-    if (gameType.value === 'versus' && needHomeTeamIntro) {
+    if (gameType.value !== 'single' && needHomeTeamIntro) {
       needHomeTeamIntro.value = true
     }
   }

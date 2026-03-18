@@ -51,6 +51,8 @@
       @clear-pitcher="currentPitcher = null"
       @random-select="randomSelectLineup"
       @clear-lineup="clearLineup"
+      :draft-lineup-positions="gameType === 'advanced' ? draftLineupPositions : null"
+      @update:draft-lineup-position="updateDraftLineupPosition"
       @confirm-away="confirmAwayTeam"
       @start-game="startGame"
       @back-to-away="backToAwayTeam"
@@ -124,6 +126,16 @@
       @update:selected-league="selectedLeague = $event"
     />
 
+    <!-- 進階模式守備重組對話框 -->
+    <DefenseReorganizeDialog
+      v-if="showDefenseReorganize"
+      :lineup="isTop ? awayTeam.lineup : homeTeam.lineup"
+      :lineup-positions="isTop ? awayTeam.lineupPositions : homeTeam.lineupPositions"
+      :pending-fills="isTop ? awayTeam.pendingPositionFills : homeTeam.pendingPositionFills"
+      :bench-roster="benchRoster"
+      @confirm="onDefenseReorganizeConfirm"
+    />
+
     <!-- 換投手選擇器彈窗 -->
     <PitcherSelectDialog
       v-if="mode === 'game'"
@@ -162,6 +174,7 @@ import PitcherInfo from './components/PitcherInfo.vue'
 import BallCountDisplay from './components/BallCountDisplay.vue'
 import PitcherSelectDialog from './components/PitcherSelectDialog.vue'
 import BatterSelectDialog from './components/BatterSelectDialog.vue'
+import DefenseReorganizeDialog from './components/DefenseReorganizeDialog.vue'
 import BasesDisplay from './components/BasesDisplay.vue'
 import { processRunners, processWalk, playOutSound, playHitSound, speak } from './composables/gameHelpers.js'
 import { useGameState } from './composables/useGameState.js'
@@ -302,17 +315,42 @@ const {
 
 // 創建隊伍名稱 computed
 const awayTeamName = computed(() => {
-  if (gameType.value !== 'versus') return ''
+  if (gameType.value === 'single') return ''
   return awayTeam.value?.name || '客隊'
 })
 
 const homeTeamName = computed(() => {
-  if (gameType.value !== 'versus') return ''
+  if (gameType.value === 'single') return ''
   return homeTeam.value?.name || '主隊'
 })
 
 const csvInput = ref('')
 const teamChants = ref([])
+
+// === 進階模式守位工具 ===
+const FIELDING_POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH']
+const PITCHER_POSITIONS = ['SP', 'RP', 'CP', 'P']
+
+function canPlayPosition(player, position) {
+  if (position === 'DH') return !PITCHER_POSITIONS.includes(player.mainPosition)
+  if (!player.mainPosition && !player.otherPositions) return true
+  if (player.mainPosition === position) return true
+  if (player.otherPositions) {
+    return player.otherPositions.split('/').map(p => p.trim()).includes(position)
+  }
+  return false
+}
+
+const draftLineupPositions = ref([]) // 選陣容時每打順的守位（進階模式用）
+const updateDraftLineupPosition = (index, position) => {
+  const newPos = [...draftLineupPositions.value]
+  newPos[index] = position
+  draftLineupPositions.value = newPos
+}
+
+// 守備重組對話框狀態
+const showDefenseReorganize = ref(false)
+const pendingThreeOutsCallbacks = ref(null)
 
 onMounted(async () => {
   await loadCSVFromURL()
@@ -337,12 +375,13 @@ const selectMode = (type) => {
   selectedTeam.value = null
   replacingIndex.value = -1
   
-  // 如果是對戰模式，初始化兩隊數據
-  if (type === 'versus') {
-    awayTeam.value = { lineup: [], pitcher: null, batterIndex: 0 }
-    homeTeam.value = { lineup: [], pitcher: null, batterIndex: 0 }
+  // 如果是對戰模式或進階模式，初始化兩隊數據
+  if (type === 'versus' || type === 'advanced') {
+    awayTeam.value = { lineup: [], pitcher: null, batterIndex: 0, lineupPositions: [], pendingPositionFills: [] }
+    homeTeam.value = { lineup: [], pitcher: null, batterIndex: 0, lineupPositions: [], pendingPositionFills: [] }
     isSelectingAwayTeam.value = true
     needHomeTeamIntro.value = false
+    draftLineupPositions.value = []
   }
 }
 
@@ -373,13 +412,20 @@ const addToLineup = (player) => {
     return
   }
   currentLineup.value = [...currentLineup.value, player]
-  
+  if (gameType.value === 'advanced') {
+    draftLineupPositions.value = [...draftLineupPositions.value, '']
+  }
 }
 
 const removeFromLineup = (index) => {
   const newLineup = [...currentLineup.value]
   newLineup.splice(index, 1)
   currentLineup.value = newLineup
+  if (gameType.value === 'advanced') {
+    const newPos = [...draftLineupPositions.value]
+    newPos.splice(index, 1)
+    draftLineupPositions.value = newPos
+  }
 }
 
 // 確認客隊設定，切換到主隊選擇
@@ -387,6 +433,16 @@ const confirmAwayTeam = () => {
   if (currentLineup.value.length < 9 || !currentPitcher.value) {
     showToast(TEXTS.lineup.needComplete, TEXTS.toast.alert)
     return
+  }
+  if (gameType.value === 'advanced') {
+    const filled = draftLineupPositions.value.every(p => p !== '')
+    const unique = new Set(draftLineupPositions.value).size === 9
+    if (!filled || !unique) {
+      showToast('請為 9 個打順各指定唯一守備位置', 'alert')
+      return
+    }
+    awayTeam.value.lineupPositions = [...draftLineupPositions.value]
+    draftLineupPositions.value = []
   }
   isSelectingAwayTeam.value = false
   replacingIndex.value = -1
@@ -406,6 +462,7 @@ const clearLineup = () => {
   currentLineup.value = []
   currentPitcher.value = null
   replacingIndex.value = -1
+  if (gameType.value === 'advanced') draftLineupPositions.value = []
 }
 
 // 點擊已選球員進行更換
@@ -445,6 +502,22 @@ const substituteBatter = (player) => {
   if (isMuted.value || !('speechSynthesis' in window)) {
     playBatterMusic(player, teamChants.value)
   }
+
+  // 進階模式：同步更新 team object 並檢查守位相容性
+  if (gameType.value === 'advanced') {
+    const idx = currentBatterIndex.value
+    const team = isTop.value ? awayTeam.value : homeTeam.value
+    const requiredPos = team.lineupPositions[idx]
+    team.lineup[idx] = player
+    if (canPlayPosition(player, requiredPos)) {
+      team.pendingPositionFills = team.pendingPositionFills.filter(f => f.batterIndex !== idx)
+    } else {
+      const alreadyPending = team.pendingPositionFills.some(f => f.batterIndex === idx)
+      if (!alreadyPending) {
+        team.pendingPositionFills.push({ batterIndex: idx, requiredPosition: requiredPos })
+      }
+    }
+  }
 }
 
 // 換投手功能
@@ -454,7 +527,7 @@ const substitutePitcher = (pitcher) => {
   playedPitchers.value.add(pitcher.name + pitcher.number)
   
   // 重要：更新對應隊伍的投手，這樣換局時才不會換回來
-  if (gameType.value === 'versus') {
+  if (gameType.value === 'versus' || gameType.value === 'advanced') {
     if (isTop.value) {
       // 上半局進攻 -> 主隊投手
       homeTeam.value.pitcher = pitcher
@@ -537,10 +610,22 @@ const skipIntro = () => {
 }
 
 const startGame = () => {
+  // 進階模式：驗證主隊守位並儲存
+  if (gameType.value === 'advanced') {
+    const filled = draftLineupPositions.value.every(p => p !== '')
+    const unique = new Set(draftLineupPositions.value).size === 9
+    if (!filled || !unique) {
+      showToast('請為 9 個打順各指定唯一守備位置', 'alert')
+      return
+    }
+    homeTeam.value.lineupPositions = [...draftLineupPositions.value]
+    draftLineupPositions.value = []
+  }
+
   // 清空統計
   clearStats()
   batterResults.value = {}
-  
+
   gameInitialization.startGame({
     showLineupIntro,
     introIndex,
@@ -804,23 +889,54 @@ const handleHBP = () => {
   nextBatter()
 }
 
+const buildVersusCallbacks = () => ({
+  playLineupIntro,
+  speakBatterName,
+  playBatterMusic,
+  currentPlayer,
+  showLineupIntro,
+  introIndex,
+  needHomeTeamIntro,
+  isMuted,
+  audioRef,
+  teamChants,
+})
+
+const benchRoster = computed(() => {
+  const currentLineupIds = new Set(lineup.value.map(p => p?.id || (p?.name + p?.number)).filter(Boolean))
+  const currentTeam = isTop.value ? awayTeam.value.lineup[0]?.team : homeTeam.value.lineup[0]?.team
+  return roster.value.filter(p => p.team === currentTeam && !currentLineupIds.has(p.id || (p.name + p.number)))
+})
+
 // 處理三出局的共用邏輯
 const handleThreeOuts = () => {
+  if (gameType.value === 'advanced') {
+    const team = isTop.value ? awayTeam.value : homeTeam.value
+    if (team.pendingPositionFills.length > 0) {
+      pendingThreeOutsCallbacks.value = buildVersusCallbacks()
+      showDefenseReorganize.value = true
+      return
+    }
+    team.pendingPositionFills = []
+    inningManager.handleThreeOutsVersus(buildVersusCallbacks())
+    return
+  }
   if (gameType.value === 'versus') {
-    inningManager.handleThreeOutsVersus({
-      playLineupIntro,
-      speakBatterName,
-      playBatterMusic,
-      currentPlayer,
-      showLineupIntro,
-      introIndex,
-      needHomeTeamIntro,
-      isMuted,
-      audioRef,
-      teamChants
-    })
+    inningManager.handleThreeOutsVersus(buildVersusCallbacks())
   } else {
     inningManager.handleThreeOutsSingle(nextBatter)
+  }
+}
+
+const onDefenseReorganizeConfirm = ({ newLineup, newPositions }) => {
+  const team = isTop.value ? awayTeam.value : homeTeam.value
+  team.lineup = newLineup
+  team.lineupPositions = newPositions
+  team.pendingPositionFills = []
+  showDefenseReorganize.value = false
+  if (pendingThreeOutsCallbacks.value) {
+    inningManager.handleThreeOutsVersus(pendingThreeOutsCallbacks.value)
+    pendingThreeOutsCallbacks.value = null
   }
 }
 
@@ -883,7 +999,7 @@ const handleOut = () => {
 const addScore = (runs) => {
   if (runs === 0) return
   const currentInning = inning.value - 1 // 陣列索引從0開始
-  if (gameType.value === 'versus') {
+  if (gameType.value !== 'single') {
     if (isTop.value) {
       score.away += runs
       if (currentInning < 9) {
