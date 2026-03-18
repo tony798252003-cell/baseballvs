@@ -10,7 +10,7 @@
 
       <!-- 一軍/二軍切換 -->
       <div class="flex gap-2 mb-3">
-        <button v-for="l in ['一軍', '二軍', 'all', 'coach']" :key="l"
+        <button v-for="l in ['一軍', '二軍', 'coach', 'all']" :key="l"
           @click="$emit('update:selectedLeague', l)"
           :class="[
             'px-4 py-1.5 rounded-full font-bold text-sm transition-all duration-150 border cursor-pointer min-h-11',
