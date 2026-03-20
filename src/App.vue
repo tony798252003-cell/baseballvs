@@ -52,7 +52,7 @@
       @random-select="randomSelectLineup"
       @clear-lineup="clearLineup"
       :draft-lineup-positions="gameType === 'advanced' ? draftLineupPositions : null"
-      @update:draft-lineup-position="updateDraftLineupPosition"
+      @swap-lineup-positions="swapLineupPositions"
       @confirm-away="confirmAwayTeam"
       @start-game="startGame"
       @back-to-away="backToAwayTeam"
@@ -342,10 +342,23 @@ function canPlayPosition(player, position) {
 }
 
 const draftLineupPositions = ref([]) // 選陣容時每打順的守位（進階模式用）
-const updateDraftLineupPosition = (index, position) => {
-  const newPos = [...draftLineupPositions.value]
-  newPos[index] = position
-  draftLineupPositions.value = newPos
+
+// 取得球員可擔任的守備位置清單（按主守位→副守位排序）
+function getPlayerPositions(player) {
+  const positions = []
+  if (player.mainPosition && !PITCHER_POSITIONS.includes(player.mainPosition)) {
+    positions.push(player.mainPosition)
+  }
+  if (player.otherPositions) {
+    player.otherPositions.split('/').map(p => p.trim()).filter(p => p && !PITCHER_POSITIONS.includes(p)).forEach(p => {
+      if (!positions.includes(p)) positions.push(p)
+    })
+  }
+  // 自由球員（無設定守位且非投手）→ 可擔任任何守位
+  if (positions.length === 0 && !PITCHER_POSITIONS.includes(player.mainPosition)) {
+    return [...FIELDING_POSITIONS]
+  }
+  return positions
 }
 
 // 守備重組對話框狀態
@@ -389,13 +402,21 @@ const selectMode = (type) => {
 const addToLineup = (player) => {
   // 如果正在替換模式
   if (replacingIndex.value >= 0) {
-    // 檢查該球員是否已在其他位置
     const existingIndex = currentLineup.value.findIndex((p, i) => p === player && i !== replacingIndex.value)
     if (existingIndex >= 0) {
       showToast('該球員已在打序中', 'alert')
       return
     }
-    
+
+    // 進階模式：替換時檢查守位相容性
+    if (gameType.value === 'advanced') {
+      const requiredPos = draftLineupPositions.value[replacingIndex.value]
+      if (!canPlayPosition(player, requiredPos)) {
+        showToast(`${player.name} 無法擔任 ${requiredPos}，無法替換`, 'alert')
+        return
+      }
+    }
+
     const oldPlayer = currentLineup.value[replacingIndex.value]
     const newLineup = [...currentLineup.value]
     newLineup[replacingIndex.value] = player
@@ -404,17 +425,49 @@ const addToLineup = (player) => {
     replacingIndex.value = -1
     return
   }
-  
+
   // 正常添加模式
-  if (currentLineup.value.includes(player)) return
+  if (currentLineup.value.some(p => p.name === player.name && p.number === player.number)) return
   if (currentLineup.value.length >= 9) {
     showToast(TEXTS.lineup.full, TEXTS.toast.alert)
     return
   }
-  currentLineup.value = [...currentLineup.value, player]
+
+  // 進階模式：自動分配守位
   if (gameType.value === 'advanced') {
-    draftLineupPositions.value = [...draftLineupPositions.value, '']
+    const takenPositions = new Set(draftLineupPositions.value.filter(p => p))
+    const available = getPlayerPositions(player).find(p => !takenPositions.has(p))
+    if (!available) {
+      showToast(`${player.name} 沒有可用的守備位置（所有守位已被使用）`, 'alert')
+      return
+    }
+    currentLineup.value = [...currentLineup.value, player]
+    draftLineupPositions.value = [...draftLineupPositions.value, available]
+    return
   }
+
+  currentLineup.value = [...currentLineup.value, player]
+}
+
+// 進階模式：打線內兩人互換守位
+const swapLineupPositions = (indexA, indexB) => {
+  const posA = draftLineupPositions.value[indexA]
+  const posB = draftLineupPositions.value[indexB]
+  const playerA = currentLineup.value[indexA]
+  const playerB = currentLineup.value[indexB]
+  if (!canPlayPosition(playerA, posB)) {
+    showToast(`${playerA.name} 無法擔任 ${posB}`, 'alert')
+    return
+  }
+  if (!canPlayPosition(playerB, posA)) {
+    showToast(`${playerB.name} 無法擔任 ${posA}`, 'alert')
+    return
+  }
+  const newPos = [...draftLineupPositions.value]
+  newPos[indexA] = posB
+  newPos[indexB] = posA
+  draftLineupPositions.value = newPos
+  showToast(`${playerA.name}(${posB}) ↔ ${playerB.name}(${posA}) 守位互換`, 'success')
 }
 
 const removeFromLineup = (index) => {

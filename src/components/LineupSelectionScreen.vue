@@ -27,7 +27,7 @@
       </div>
 
       <!-- 一軍/二軍切換 -->
-      <div class="flex gap-2 mb-3">
+      <div class="flex gap-2 mb-2">
         <button v-for="l in ['一軍', '二軍', 'coach', 'all']" :key="l"
           @click="$emit('update:selected-league', l)"
           :class="[
@@ -35,6 +35,19 @@
             selectedLeague === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300'
           ]">
           {{ l === 'all' ? '全部' : l === 'coach' ? '教練' : l }}
+        </button>
+      </div>
+
+      <!-- 進階模式：守位篩選 -->
+      <div v-if="gameType === 'advanced'" class="flex gap-1 mb-2 flex-wrap">
+        <button @click="advancedPositionFilter = null"
+          :class="['px-2 py-1 rounded-lg font-bold text-xs border transition cursor-pointer', advancedPositionFilter === null ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50 hover:border-emerald-400']">
+          全部
+        </button>
+        <button v-for="pos in ADVANCED_POSITIONS" :key="pos"
+          @click="advancedPositionFilter = pos"
+          :class="['px-2 py-1 rounded-lg font-bold text-xs border transition cursor-pointer', advancedPositionFilter === pos ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50 hover:border-emerald-400']">
+          {{ pos }}
         </button>
       </div>
 
@@ -91,9 +104,9 @@
 
         <!-- 打者列表 -->
         <div class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 content-start">
-          <button v-for="player in filteredBatters" :key="player.name + player.number"
+          <button v-for="player in advancedFilteredBatters" :key="player.name + player.number"
             @click="$emit('add-player', player)"
-            :disabled="currentLineup.includes(player)"
+            :disabled="currentLineup.some(p => p.name === player.name && p.number === player.number)"
             class="bg-white hover:shadow-md disabled:bg-slate-50 disabled:opacity-40 p-2 rounded-lg transition-all duration-150 transform hover:scale-105 text-left border border-slate-100 hover:border-indigo-300 disabled:border-slate-100 shadow-sm cursor-pointer disabled:cursor-not-allowed">
             <div class="flex items-start gap-2">
               <img v-if="player.photo" :src="player.photo" class="w-12 h-12 rounded-full object-cover border-2 border-indigo-300 shadow-md flex-shrink-0" />
@@ -189,18 +202,29 @@
 
     <!-- 右側：已選打序 -->
     <div class="w-1/3 h-full bg-slate-50 border-l border-slate-100 shadow-inner p-4 flex flex-col overflow-hidden relative">
-      <h3 class="text-xl font-black text-slate-900 mb-2">
-        {{ gameType === 'single' ? '打者' : (isSelectingAwayTeam ? '客隊' : '主隊') }} ({{ currentLineup.length }}/9)
-      </h3>
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xl font-black text-slate-900">
+          {{ gameType === 'single' ? '打者' : (isSelectingAwayTeam ? '客隊' : '主隊') }} ({{ currentLineup.length }}/9)
+        </h3>
+        <!-- 進階模式：換位模式切換 -->
+        <button v-if="gameType === 'advanced' && currentLineup.length >= 2"
+          @click="toggleSwapMode"
+          :class="['px-2 py-1 rounded-lg font-bold text-xs border transition cursor-pointer',
+            swapMode ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-orange-50 hover:border-orange-400']">
+          {{ swapMode ? (swapFirstIndex >= 0 ? '選第2位' : '取消換位') : '⇄ 換位' }}
+        </button>
+      </div>
 
       <!-- 9個棒次固定顯示，不捲動 - 為投手區域預留空間 -->
       <div class="flex flex-col justify-between" style="height: calc(100% - 280px); min-height: 300px; overflow-y: auto;">
         <!-- 已選擇的打者 -->
         <div v-for="(player, index) in currentLineup" :key="index"
-          @click="$emit('replace-player', index)"
+          @click="onLineupSlotClick(index)"
           :class="[
-            'bg-white p-1.5 rounded-lg flex items-center gap-2 shadow-sm cursor-pointer hover:shadow-md hover:border-indigo-300 transition-all duration-150',
-            replacingIndex === index ? 'border-2 border-amber-400 animate-pulse' : 'border border-slate-200'
+            'bg-white p-1.5 rounded-lg flex items-center gap-2 shadow-sm cursor-pointer hover:shadow-md transition-all duration-150',
+            swapMode && swapFirstIndex === index ? 'border-2 border-orange-400 bg-orange-50' :
+            swapMode ? 'border border-orange-200 hover:border-orange-400' :
+            replacingIndex === index ? 'border-2 border-amber-400 animate-pulse' : 'border border-slate-200 hover:border-indigo-300'
           ]">
           <div class="text-xl font-black text-indigo-600 w-7">{{ index + 1 }}</div>
           <img v-if="player.photo" :src="player.photo" class="w-9 h-9 rounded-full object-cover border-2 border-amber-400/60" />
@@ -213,18 +237,11 @@
             ]">{{ player.name }}</div>
             <div class="text-xs text-slate-500 font-bold truncate">#{{ player.number }}</div>
           </div>
-          <select v-if="draftLineupPositions"
-            :value="draftLineupPositions[index]"
-            @change="emit('update:draft-lineup-position', index, $event.target.value)"
-            @click.stop
-            class="text-xs bg-slate-100 border border-slate-300 rounded px-1 py-0.5 ml-1 w-14 flex-shrink-0">
-            <option value="">--</option>
-            <option v-for="pos in ['C','1B','2B','3B','SS','LF','CF','RF','DH']" :key="pos"
-              :value="pos"
-              :disabled="draftLineupPositions.includes(pos) && draftLineupPositions[index] !== pos">
-              {{ pos }}
-            </option>
-          </select>
+          <!-- 進階模式：顯示守位徽章 -->
+          <span v-if="draftLineupPositions && draftLineupPositions[index]"
+            class="text-xs font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 flex-shrink-0">
+            {{ draftLineupPositions[index] }}
+          </span>
         </div>
 
         <!-- 未選擇的棒次 -->
@@ -356,18 +373,80 @@ const emit = defineEmits([
   'start-game',
   'back-to-away',
   'update:selected-league',
-  'update:draft-lineup-position'
+  'swap-lineup-positions'
 ]);
+
+const ADVANCED_POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'];
+const PITCHER_POSITIONS = ['SP', 'RP', 'CP', 'P'];
 
 const showOtherTeams = ref(false);
 const showOtherPitcherTeams = ref(false);
 const selectingPitcher = ref(false);
+
+// 進階模式：守位篩選 & 換位
+const advancedPositionFilter = ref(null);
+const swapMode = ref(false);
+const swapFirstIndex = ref(-1);
+
+function canPlayerPlayPos(player, position) {
+  if (position === 'DH') return !PITCHER_POSITIONS.includes(player.mainPosition);
+  if (!player.mainPosition && !player.otherPositions) return true;
+  if (player.mainPosition === position) return true;
+  if (player.otherPositions) {
+    return player.otherPositions.split('/').map(p => p.trim()).includes(position);
+  }
+  return false;
+}
+
+// 進階模式守位過濾後的打者清單
+const advancedFilteredBatters = computed(() => {
+  if (props.gameType !== 'advanced' || !advancedPositionFilter.value) return props.filteredBatters;
+  const pos = advancedPositionFilter.value;
+  return props.filteredBatters.filter(p => canPlayerPlayPos(p, pos));
+});
+
+function toggleSwapMode() {
+  if (swapMode.value && swapFirstIndex.value < 0) {
+    // 取消換位
+    swapMode.value = false;
+  } else if (!swapMode.value) {
+    swapMode.value = true;
+    swapFirstIndex.value = -1;
+  }
+}
+
+function onLineupSlotClick(index) {
+  if (swapMode.value) {
+    if (swapFirstIndex.value < 0) {
+      swapFirstIndex.value = index;
+    } else if (swapFirstIndex.value === index) {
+      swapFirstIndex.value = -1; // 取消選擇
+    } else {
+      emit('swap-lineup-positions', swapFirstIndex.value, index);
+      swapMode.value = false;
+      swapFirstIndex.value = -1;
+    }
+  } else {
+    emit('replace-player', index);
+  }
+}
 
 // Auto-switch to pitcher mode when lineup reaches 9
 watch(() => props.currentLineup.length, (len) => {
   if (len === 9 && !props.currentPitcher) {
     selectingPitcher.value = true;
   }
+  // 若打線清空，重置換位狀態
+  if (len === 0) {
+    swapMode.value = false;
+    swapFirstIndex.value = -1;
+  }
+});
+
+watch(() => props.isSelectingAwayTeam, () => {
+  swapMode.value = false;
+  swapFirstIndex.value = -1;
+  advancedPositionFilter.value = null;
 });
 
 // Back to batter mode when replacing a batter
