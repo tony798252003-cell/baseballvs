@@ -244,6 +244,15 @@
           </span>
         </div>
 
+        <!-- 進階模式：剩餘守位提示 -->
+        <div v-if="draftLineupPositions && remainingPositions.length > 0" class="mt-1 mb-1 p-2 bg-emerald-50 rounded-lg border border-emerald-200">
+          <div class="text-xs text-emerald-700 font-bold mb-1">剩餘守位：</div>
+          <div class="flex flex-wrap gap-1">
+            <span v-for="pos in remainingPositions" :key="pos"
+              class="text-xs font-black px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-800">{{ pos }}</span>
+          </div>
+        </div>
+
         <!-- 未選擇的棒次 -->
         <div v-for="i in (9 - currentLineup.length)" :key="'empty-' + i"
           :class="[
@@ -389,7 +398,8 @@ const swapMode = ref(false);
 const swapFirstIndex = ref(-1);
 
 function canPlayerPlayPos(player, position) {
-  if (position === 'DH') return !PITCHER_POSITIONS.includes(player.mainPosition);
+  if (PITCHER_POSITIONS.includes(player.mainPosition)) return false;
+  if (position === 'DH') return true; // 任何非投手皆可 DH
   if (!player.mainPosition && !player.otherPositions) return true;
   if (player.mainPosition === position) return true;
   if (player.otherPositions) {
@@ -397,6 +407,13 @@ function canPlayerPlayPos(player, position) {
   }
   return false;
 }
+
+// 進階模式：尚未被分配的守位
+const remainingPositions = computed(() => {
+  if (!props.draftLineupPositions) return [];
+  const taken = new Set(props.draftLineupPositions.filter(p => p));
+  return ADVANCED_POSITIONS.filter(p => !taken.has(p));
+});
 
 // 進階模式守位過濾後的打者清單
 const advancedFilteredBatters = computed(() => {

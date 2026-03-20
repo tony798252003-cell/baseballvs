@@ -343,21 +343,21 @@ function canPlayPosition(player, position) {
 
 const draftLineupPositions = ref([]) // 選陣容時每打順的守位（進階模式用）
 
-// 取得球員可擔任的守備位置清單（按主守位→副守位排序）
+// 取得球員可擔任的守備位置清單（按主守位→副守位→DH排序）
 function getPlayerPositions(player) {
+  // 投手不可擔任野手守位
+  if (PITCHER_POSITIONS.includes(player.mainPosition)) return []
   const positions = []
-  if (player.mainPosition && !PITCHER_POSITIONS.includes(player.mainPosition)) {
-    positions.push(player.mainPosition)
-  }
+  if (player.mainPosition) positions.push(player.mainPosition)
   if (player.otherPositions) {
     player.otherPositions.split('/').map(p => p.trim()).filter(p => p && !PITCHER_POSITIONS.includes(p)).forEach(p => {
       if (!positions.includes(p)) positions.push(p)
     })
   }
-  // 自由球員（無設定守位且非投手）→ 可擔任任何守位
-  if (positions.length === 0 && !PITCHER_POSITIONS.includes(player.mainPosition)) {
-    return [...FIELDING_POSITIONS]
-  }
+  // 任何非投手皆可擔任 DH
+  if (!positions.includes('DH')) positions.push('DH')
+  // 自由球員（無設定主守位）→ 可擔任任何守位
+  if (!player.mainPosition) return [...FIELDING_POSITIONS]
   return positions
 }
 
