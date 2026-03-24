@@ -52,7 +52,6 @@
       @random-select="randomSelectLineup"
       @clear-lineup="clearLineup"
       :draft-lineup-positions="gameType === 'advanced' ? draftLineupPositions : null"
-      @update:draft-lineup-position="(i, pos) => { const p = [...draftLineupPositions]; p[i] = pos; draftLineupPositions.value = p }"
       @swap-lineup-positions="swapLineupPositions"
       @confirm-away="confirmAwayTeam"
       @start-game="startGame"

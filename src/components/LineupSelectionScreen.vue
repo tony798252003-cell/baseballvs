@@ -206,25 +206,26 @@
         <h3 class="text-xl font-black text-slate-900">
           {{ gameType === 'single' ? '打者' : (isSelectingAwayTeam ? '客隊' : '主隊') }} ({{ currentLineup.length }}/9)
         </h3>
-        <!-- 進階模式：換位模式切換 -->
-        <button v-if="gameType === 'advanced' && currentLineup.length >= 2"
-          @click="toggleSwapMode"
-          :class="['px-2 py-1 rounded-lg font-bold text-xs border transition cursor-pointer',
-            swapMode ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-orange-50 hover:border-orange-400']">
-          {{ swapMode ? (swapFirstIndex >= 0 ? '選第2位' : '取消換位') : '⇄ 換位' }}
-        </button>
+        <span v-if="gameType === 'advanced' && currentLineup.length >= 2" class="text-xs text-slate-400 font-bold">拖拉可換位</span>
       </div>
 
       <!-- 9個棒次固定顯示，不捲動 - 為投手區域預留空間 -->
       <div class="flex flex-col justify-between" style="height: calc(100% - 280px); min-height: 300px; overflow-y: auto;">
         <!-- 已選擇的打者 -->
         <div v-for="(player, index) in currentLineup" :key="index"
+          :draggable="!!draftLineupPositions"
+          @dragstart="onDragStart(index, $event)"
+          @dragover.prevent="dragOverIndex = index"
+          @dragleave="dragOverIndex = -1"
+          @drop.prevent="onDrop(index)"
+          @dragend="dragOverIndex = -1; dragSourceIndex = -1"
           @click="onLineupSlotClick(index)"
           :class="[
-            'bg-white p-1.5 rounded-lg flex items-center gap-2 shadow-sm cursor-pointer hover:shadow-md transition-all duration-150',
-            swapMode && swapFirstIndex === index ? 'border-2 border-orange-400 bg-orange-50' :
-            swapMode ? 'border border-orange-200 hover:border-orange-400' :
-            replacingIndex === index ? 'border-2 border-amber-400 animate-pulse' : 'border border-slate-200 hover:border-indigo-300'
+            'p-1.5 rounded-lg flex items-center gap-2 shadow-sm transition-all duration-150',
+            draftLineupPositions ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+            dragOverIndex === index && dragSourceIndex !== index ? 'border-2 border-orange-400 bg-orange-50 scale-105' :
+            dragSourceIndex === index ? 'border-2 border-indigo-400 opacity-50' :
+            replacingIndex === index ? 'border-2 border-amber-400 animate-pulse bg-white' : 'border border-slate-200 bg-white hover:shadow-md hover:border-indigo-300'
           ]">
           <div class="text-xl font-black text-indigo-600 w-7">{{ index + 1 }}</div>
           <img v-if="player.photo" :src="player.photo" class="w-9 h-9 rounded-full object-cover border-2 border-amber-400/60" />
@@ -237,14 +238,11 @@
             ]">{{ player.name }}</div>
             <div class="text-xs text-slate-500 font-bold truncate">#{{ player.number }}</div>
           </div>
-          <!-- 進階模式：守位下拉（可手動更改） -->
-          <select v-if="draftLineupPositions"
-            :value="draftLineupPositions[index]"
-            @change="onPositionChange(index, $event.target.value)"
-            @click.stop
-            class="text-xs font-black px-1 py-0.5 rounded bg-emerald-100 border border-emerald-300 text-emerald-700 flex-shrink-0 w-14 cursor-pointer">
-            <option v-for="pos in availablePositionsFor(index)" :key="pos" :value="pos">{{ pos }}</option>
-          </select>
+          <!-- 進階模式：守位徽章 -->
+          <span v-if="draftLineupPositions && draftLineupPositions[index]"
+            class="text-xs font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 flex-shrink-0 select-none">
+            {{ draftLineupPositions[index] }}
+          </span>
         </div>
 
         <!-- 進階模式：剩餘守位提示 -->
@@ -396,10 +394,12 @@ const showOtherTeams = ref(false);
 const showOtherPitcherTeams = ref(false);
 const selectingPitcher = ref(false);
 
-// 進階模式：守位篩選 & 換位
+// 進階模式：守位篩選 & 拖拉換位
 const advancedPositionFilter = ref(null);
 const swapMode = ref(false);
 const swapFirstIndex = ref(-1);
+const dragSourceIndex = ref(-1);
+const dragOverIndex = ref(-1);
 
 function canPlayerPlayPos(player, position) {
   if (PITCHER_POSITIONS.includes(player.mainPosition)) return false;
@@ -426,22 +426,17 @@ const advancedFilteredBatters = computed(() => {
   return props.filteredBatters.filter(p => canPlayerPlayPos(p, pos));
 });
 
-// 取得某個打順槽可選擇的守位（該球員能擔任 + 未被其他槽占用，或就是目前守位）
-function availablePositionsFor(index) {
-  if (!props.draftLineupPositions) return [];
-  const player = props.currentLineup[index];
-  if (!player) return [];
-  const currentPos = props.draftLineupPositions[index];
-  const takenByOthers = new Set(
-    props.draftLineupPositions.filter((p, i) => i !== index && p)
-  );
-  return ADVANCED_POSITIONS.filter(pos =>
-    canPlayerPlayPos(player, pos) && (!takenByOthers.has(pos) || pos === currentPos)
-  );
+function onDragStart(index, event) {
+  dragSourceIndex.value = index;
+  event.dataTransfer.effectAllowed = 'move';
 }
 
-function onPositionChange(index, newPos) {
-  emit('update:draft-lineup-position', index, newPos);
+function onDrop(targetIndex) {
+  const src = dragSourceIndex.value;
+  dragOverIndex.value = -1;
+  dragSourceIndex.value = -1;
+  if (src < 0 || src === targetIndex) return;
+  emit('swap-lineup-positions', src, targetIndex);
 }
 
 function toggleSwapMode() {
