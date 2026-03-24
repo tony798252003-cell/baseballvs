@@ -565,8 +565,8 @@ async function confirmDropboxAdd() {
 
         if (url.includes('?dl=0')) {
           url = url.replace('?dl=0', '?raw=1')
-        } else if (!url.includes('?')) {
-          url = url + '?raw=1'
+        } else {
+          url = url + (url.includes('?') ? '&raw=1' : '?raw=1')
         }
 
         const { data: inserted, error } = await supabase
