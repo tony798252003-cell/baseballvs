@@ -500,7 +500,7 @@ async function syncFromDropbox() {
     const mp3Files = listData.entries.filter(e => e.name.toLowerCase().endsWith('.mp3'))
 
     const existingKeys = new Set(
-      teamChantsData.value.map(c => `${c.team}__${c.name}`)
+      teamChantsData.value.map(c => `${c.team.trim()}__${c.name.trim()}`)
     )
 
     const newItems = []
@@ -514,7 +514,7 @@ async function syncFromDropbox() {
       }
       const team = file.name.slice(0, separatorIdx).trim()
       const nameWithExt = file.name.slice(separatorIdx + 3).trim()
-      const name = nameWithExt.replace(/\.mp3$/i, '')
+      const name = nameWithExt.replace(/\.mp3$/i, '').trim()
       const key = `${team}__${name}`
       if (!existingKeys.has(key)) {
         newItems.push({ team, name, path: file.path_lower, checked: true })
@@ -583,10 +583,15 @@ async function confirmDropboxAdd() {
           .select()
           .single()
 
-        if (error) { failed++; continue }
+        if (error) {
+          console.error(`[Dropbox Sync] insert failed for "${item.team} - ${item.name}":`, error)
+          failed++
+          continue
+        }
         teamChantsData.value.push(inserted)
         added++
       } catch (e) {
+        console.error(`[Dropbox Sync] exception for "${item.team} - ${item.name}":`, e)
         failed++
       }
     }
