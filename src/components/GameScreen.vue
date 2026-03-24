@@ -115,7 +115,7 @@
           <PlayerCard 
             v-if="currentPlayer" 
             :player="currentPlayer"
-            :results="batterResults && batterResults[`${currentPlayer.name}${currentPlayer.number}`]"
+            :results="batterResults && batterResults[`${isTop ? 'away' : 'home'}_${currentPlayer.name}${currentPlayer.number}`]"
           >
             <template #default-icon>
               <UsersIcon :size="32" class="sm:w-10 sm:h-10 md:w-12 md:h-12 lg:w-16 lg:h-16" />

@@ -833,7 +833,7 @@ const handleHit = (bases) => {
     }
     
     // 記錄打者攻擊結果
-    const batterId = `${currentPlayer.value.name}${currentPlayer.value.number}`
+    const batterId = `${isTop.value ? 'away' : 'home'}_${currentPlayer.value.name}${currentPlayer.value.number}`
     if (!batterResults.value[batterId]) batterResults.value[batterId] = []
     const hitTypes = ['一壘', '二壘', '三壘', '全壘']
     batterResults.value[batterId].push({ type: 'hit', detail: hitTypes[bases - 1] })
@@ -868,7 +868,7 @@ const handleWalk = () => {
     recordWalk(selectedPitcher.value, currentPlayer.value)
     
     // 記錄打者攻擊結果
-    const batterId = `${currentPlayer.value.name}${currentPlayer.value.number}`
+    const batterId = `${isTop.value ? 'away' : 'home'}_${currentPlayer.value.name}${currentPlayer.value.number}`
     if (!batterResults.value[batterId]) batterResults.value[batterId] = []
     batterResults.value[batterId].push({ type: 'walk', detail: '四壞' })
   }
@@ -910,7 +910,7 @@ const handleWalk = () => {
 const handleHBP = () => {
   // 記錄打者攻擊結果
   if (currentPlayer.value) {
-    const batterId = `${currentPlayer.value.name}${currentPlayer.value.number}`
+    const batterId = `${isTop.value ? 'away' : 'home'}_${currentPlayer.value.name}${currentPlayer.value.number}`
     if (!batterResults.value[batterId]) batterResults.value[batterId] = []
     batterResults.value[batterId].push({ type: 'walk', detail: '觸身' })
   }
@@ -1030,7 +1030,7 @@ const handleStrikeout = () => {
     recordStrikeout(selectedPitcher.value, currentPlayer.value)
     
     // 記錄打者攻擊結果
-    const batterId = `${currentPlayer.value.name}${currentPlayer.value.number}`
+    const batterId = `${isTop.value ? 'away' : 'home'}_${currentPlayer.value.name}${currentPlayer.value.number}`
     if (!batterResults.value[batterId]) batterResults.value[batterId] = []
     batterResults.value[batterId].push({ type: 'out', detail: '三振' })
   }
@@ -1043,7 +1043,7 @@ const handleOut = () => {
     recordOut(selectedPitcher.value, currentPlayer.value)
     
     // 記錄打者攻擊結果
-    const batterId = `${currentPlayer.value.name}${currentPlayer.value.number}`
+    const batterId = `${isTop.value ? 'away' : 'home'}_${currentPlayer.value.name}${currentPlayer.value.number}`
     if (!batterResults.value[batterId]) batterResults.value[batterId] = []
     batterResults.value[batterId].push({ type: 'out', detail: '出局' })
   }
