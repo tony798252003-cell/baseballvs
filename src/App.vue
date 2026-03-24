@@ -133,6 +133,7 @@
       :lineup-positions="isTop ? awayTeam.lineupPositions : homeTeam.lineupPositions"
       :pending-fills="isTop ? awayTeam.pendingPositionFills : homeTeam.pendingPositionFills"
       :bench-roster="benchRoster"
+      :team-logos="teamLogos"
       @confirm="onDefenseReorganizeConfirm"
     />
 
@@ -956,9 +957,9 @@ const buildVersusCallbacks = () => ({
 })
 
 const benchRoster = computed(() => {
-  const currentLineupIds = new Set(lineup.value.map(p => p?.id || (p?.name + p?.number)).filter(Boolean))
-  const currentTeam = isTop.value ? awayTeam.value.lineup[0]?.team : homeTeam.value.lineup[0]?.team
-  return roster.value.filter(p => p.team === currentTeam && !currentLineupIds.has(p.id || (p.name + p.number)))
+  const activeLineup = isTop.value ? awayTeam.value.lineup : homeTeam.value.lineup
+  const currentLineupIds = new Set(activeLineup.map(p => p?.id || (p?.name + p?.number)).filter(Boolean))
+  return roster.value.filter(p => !currentLineupIds.has(p.id || (p.name + p.number)))
 })
 
 // 處理三出局的共用邏輯
