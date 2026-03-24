@@ -204,6 +204,13 @@
               placeholder="Dropbox Access Token"
               class="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
             />
+          </div>
+          <div class="flex gap-2">
+            <input
+              v-model="dropboxFolder"
+              placeholder="資料夾路徑（如 /Music/Chance）"
+              class="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
+            />
             <button
               @click="syncFromDropbox"
               :disabled="dropboxSyncing"
@@ -323,6 +330,7 @@ const chantsByTeam = computed(() => {
 
 // Dropbox 同步
 const dropboxToken = ref('')
+const dropboxFolder = ref('/Music/Chance')
 const dropboxSyncOpen = ref(false)
 const dropboxSyncing = ref(false)
 const dropboxPreview = ref([])   // [{ team, name, path, checked }]
@@ -476,7 +484,7 @@ async function syncFromDropbox() {
         'Authorization': `Bearer ${dropboxToken.value.trim()}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ path: '/Music' }),
+      body: JSON.stringify({ path: dropboxFolder.value }),
     })
 
     if (listRes.status === 401) {
