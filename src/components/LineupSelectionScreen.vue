@@ -237,11 +237,14 @@
             ]">{{ player.name }}</div>
             <div class="text-xs text-slate-500 font-bold truncate">#{{ player.number }}</div>
           </div>
-          <!-- 進階模式：顯示守位徽章 -->
-          <span v-if="draftLineupPositions && draftLineupPositions[index]"
-            class="text-xs font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 flex-shrink-0">
-            {{ draftLineupPositions[index] }}
-          </span>
+          <!-- 進階模式：守位下拉（可手動更改） -->
+          <select v-if="draftLineupPositions"
+            :value="draftLineupPositions[index]"
+            @change="onPositionChange(index, $event.target.value)"
+            @click.stop
+            class="text-xs font-black px-1 py-0.5 rounded bg-emerald-100 border border-emerald-300 text-emerald-700 flex-shrink-0 w-14 cursor-pointer">
+            <option v-for="pos in availablePositionsFor(index)" :key="pos" :value="pos">{{ pos }}</option>
+          </select>
         </div>
 
         <!-- 進階模式：剩餘守位提示 -->
@@ -382,7 +385,8 @@ const emit = defineEmits([
   'start-game',
   'back-to-away',
   'update:selected-league',
-  'swap-lineup-positions'
+  'swap-lineup-positions',
+  'update:draft-lineup-position'
 ]);
 
 const ADVANCED_POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'];
@@ -421,6 +425,24 @@ const advancedFilteredBatters = computed(() => {
   const pos = advancedPositionFilter.value;
   return props.filteredBatters.filter(p => canPlayerPlayPos(p, pos));
 });
+
+// 取得某個打順槽可選擇的守位（該球員能擔任 + 未被其他槽占用，或就是目前守位）
+function availablePositionsFor(index) {
+  if (!props.draftLineupPositions) return [];
+  const player = props.currentLineup[index];
+  if (!player) return [];
+  const currentPos = props.draftLineupPositions[index];
+  const takenByOthers = new Set(
+    props.draftLineupPositions.filter((p, i) => i !== index && p)
+  );
+  return ADVANCED_POSITIONS.filter(pos =>
+    canPlayerPlayPos(player, pos) && (!takenByOthers.has(pos) || pos === currentPos)
+  );
+}
+
+function onPositionChange(index, newPos) {
+  emit('update:draft-lineup-position', index, newPos);
+}
 
 function toggleSwapMode() {
   if (swapMode.value && swapFirstIndex.value < 0) {
