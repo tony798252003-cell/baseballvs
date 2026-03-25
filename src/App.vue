@@ -863,6 +863,11 @@ const handleHit = (bases) => {
 }
 
 const handleWalk = () => {
+  // 中斷背景音樂
+  if (audioRef.value) {
+    audioRef.value.pause()
+    audioRef.value.currentTime = 0
+  }
   // 記錄統計：四壞球
   if (currentPlayer.value && selectedPitcher.value) {
     recordWalk(selectedPitcher.value, currentPlayer.value)
@@ -908,6 +913,11 @@ const handleWalk = () => {
 
 // 觸身球 (HBP - Hit By Pitch)
 const handleHBP = () => {
+  // 中斷背景音樂
+  if (audioRef.value) {
+    audioRef.value.pause()
+    audioRef.value.currentTime = 0
+  }
   // 記錄打者攻擊結果
   if (currentPlayer.value) {
     const batterId = `${isTop.value ? 'away' : 'home'}_${currentPlayer.value.name}${currentPlayer.value.number}`

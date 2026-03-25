@@ -42,14 +42,16 @@ export function processWalk(runners, runnerPhotos, currentPlayerPhoto) {
   if (newRunners[0]) {
     if (newRunners[1]) {
       if (newRunners[2]) {
+        // 滿壘：三壘跑者得分，其餘依序推進
         runs = 1
+        newRunnerPhotos[2] = newRunnerPhotos[1]  // 二壘→三壘
       } else {
         newRunners[2] = true
-        newRunnerPhotos[2] = newRunnerPhotos[1]
+        newRunnerPhotos[2] = newRunnerPhotos[1]  // 二壘→三壘
       }
     }
     newRunners[1] = true
-    newRunnerPhotos[1] = newRunnerPhotos[0]
+    newRunnerPhotos[1] = newRunnerPhotos[0]  // 一壘→二壘
   }
   newRunners[0] = true
   newRunnerPhotos[0] = currentPlayerPhoto || ''
