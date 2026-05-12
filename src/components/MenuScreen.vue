@@ -53,7 +53,7 @@
       </div>
 
       <!-- 應援曲模式 -->
-      <div v-if="!isLoading && !loadError" class="mt-4">
+      <div v-if="!isLoading" class="mt-4">
         <button @click="$emit('go-chant')"
           class="w-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-400 hover:to-rose-400 p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-150 transform hover:scale-105 cursor-pointer flex items-center justify-center gap-3">
           <span class="text-4xl">🎵</span>

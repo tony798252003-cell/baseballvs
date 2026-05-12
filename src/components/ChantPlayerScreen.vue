@@ -215,6 +215,7 @@ function nextTrack() {
 function prevTrack() {
   if (playableIndices.value.length === 0) return
   const pos = playableIndices.value.indexOf(currentIndex.value)
+  if (pos === -1) { playAt(playableIndices.value[playableIndices.value.length - 1]); return }
   const prev = playableIndices.value[(pos - 1 + playableIndices.value.length) % playableIndices.value.length]
   playAt(prev)
 }
