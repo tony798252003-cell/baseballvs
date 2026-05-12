@@ -689,6 +689,23 @@ async function verifyAllMusic() {
   showToast(`✅ 驗證完成：${withSong.length} 首`)
 }
 
+function playPreview(p) {
+  if (previewAudio.value) {
+    previewAudio.value.pause()
+    previewAudio.value.src = ''
+    previewAudio.value = null
+  }
+  if (previewingId.value === p.id) {
+    previewingId.value = null
+    return
+  }
+  const audio = new Audio(p.song)
+  audio.onended = () => { previewingId.value = null }
+  audio.play().catch(() => {})
+  previewAudio.value = audio
+  previewingId.value = p.id
+}
+
 function showToast(msg) {
   toast.value = msg
   setTimeout(() => toast.value = null, 3000)
