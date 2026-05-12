@@ -77,9 +77,34 @@
         </div>
       </div>
 
-      <!-- 下半：播放區（Task 4 填入） -->
+      <!-- 下半：播放區 -->
       <div class="flex-shrink-0 px-4 pb-6 pt-2" style="min-height: 45vh">
-        <div class="flex items-center justify-center h-full text-slate-500 text-lg">
+        <div v-if="currentIndex >= 0 && teamPlayers[currentIndex]"
+          class="rounded-2xl bg-slate-800/90 backdrop-blur-md border border-slate-700/50 shadow-xl p-4 flex items-center gap-4">
+          <img v-if="teamPlayers[currentIndex].photo"
+            :src="teamPlayers[currentIndex].photo"
+            :alt="teamPlayers[currentIndex].name"
+            class="w-20 h-20 rounded-full object-cover flex-shrink-0 ring-2 ring-yellow-400/60 shadow-md" />
+          <div v-else
+            class="w-20 h-20 rounded-full bg-slate-700 flex items-center justify-center text-3xl flex-shrink-0 ring-2 ring-slate-600">⚾</div>
+          <div class="flex-1 min-w-0">
+            <div class="font-black text-xl text-white truncate leading-tight">{{ teamPlayers[currentIndex].name }}</div>
+            <div class="text-slate-400 text-sm mt-0.5">#{{ teamPlayers[currentIndex].number }}</div>
+            <div class="mt-3 bg-slate-700 rounded-full h-1.5 overflow-hidden">
+              <div class="h-full bg-yellow-400 transition-all duration-500 rounded-full"
+                :style="{ width: progressPercent + '%' }"></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <button @click="prevTrack" aria-label="上一首"
+              class="w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 active:bg-slate-500 flex items-center justify-center text-slate-300 hover:text-white transition-colors duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-yellow-400">⏮</button>
+            <button @click="togglePlay" :aria-label="isPlaying ? '暫停' : '播放'"
+              class="w-14 h-14 rounded-full bg-yellow-400 hover:bg-yellow-300 active:bg-yellow-500 flex items-center justify-center text-slate-900 text-xl font-bold transition-colors duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-yellow-200 shadow-lg shadow-yellow-400/30">{{ isPlaying ? '⏸' : '▶' }}</button>
+            <button @click="nextTrack" aria-label="下一首"
+              class="w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 active:bg-slate-500 flex items-center justify-center text-slate-300 hover:text-white transition-colors duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-yellow-400">⏭</button>
+          </div>
+        </div>
+        <div v-else class="flex items-center justify-center h-full text-slate-500 text-lg">
           點選球員開始播放
         </div>
       </div>
@@ -88,7 +113,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { supabase } from '../lib/supabase.js'
 
 const emit = defineEmits(['back'])
@@ -131,9 +156,73 @@ function selectTeam(team) {
 const currentIndex = ref(-1)
 const isPlaying = ref(false)
 const audio = ref(null)
+const progressPercent = ref(0)
 
-function startFrom(idx) {
+const playableIndices = computed(() =>
+  teamPlayers.value
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p.song)
+    .map(({ i }) => i)
+)
+
+function stopAudio() {
+  if (audio.value) {
+    audio.value.pause()
+    audio.value.src = ''
+    audio.value = null
+  }
+  isPlaying.value = false
+  progressPercent.value = 0
+}
+
+function playAt(idx) {
+  stopAudio()
+  const player = teamPlayers.value[idx]
+  if (!player?.song) { nextTrack(); return }
   currentIndex.value = idx
+  const a = new Audio(player.song)
+  audio.value = a
+  a.ontimeupdate = () => {
+    if (a.duration) progressPercent.value = (a.currentTime / a.duration) * 100
+  }
+  a.onended = () => nextTrack()
+  a.play().catch(() => {})
   isPlaying.value = true
 }
+
+function startFrom(idx) {
+  playAt(idx)
+}
+
+function togglePlay() {
+  if (!audio.value) return
+  if (isPlaying.value) {
+    audio.value.pause()
+    isPlaying.value = false
+  } else {
+    audio.value.play().catch(() => {})
+    isPlaying.value = true
+  }
+}
+
+function nextTrack() {
+  if (playableIndices.value.length === 0) return
+  const pos = playableIndices.value.indexOf(currentIndex.value)
+  const next = playableIndices.value[(pos + 1) % playableIndices.value.length]
+  playAt(next)
+}
+
+function prevTrack() {
+  if (playableIndices.value.length === 0) return
+  const pos = playableIndices.value.indexOf(currentIndex.value)
+  const prev = playableIndices.value[(pos - 1 + playableIndices.value.length) % playableIndices.value.length]
+  playAt(prev)
+}
+
+watch(selectedTeam, () => {
+  stopAudio()
+  currentIndex.value = -1
+})
+
+onUnmounted(() => stopAudio())
 </script>
