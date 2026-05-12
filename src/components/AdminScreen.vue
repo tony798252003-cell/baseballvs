@@ -284,7 +284,68 @@
 
     <!-- 音樂狀態 tab -->
     <div v-if="activeTab === 'musicStatus'" class="flex-1 overflow-hidden flex flex-col gap-3 p-4">
-      <p class="text-slate-400 text-sm">音樂狀態（施工中）</p>
+      <!-- 工具列 -->
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <button
+          @click="verifyAllMusic"
+          :disabled="verifying"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition disabled:opacity-50"
+        >
+          {{ verifying ? `驗證中 ${verifyProgress} / ${verifyTotal}` : '🔍 全部驗證' }}
+        </button>
+        <select v-model="musicStatusFilter" class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none">
+          <option value="">所有隊伍</option>
+          <option v-for="t in teams" :key="t">{{ t }}</option>
+        </select>
+        <div class="text-xs text-slate-400 ml-auto">
+          共 {{ musicStatusPlayers.length }} 人
+          ・🔴 {{ musicStatusPlayers.filter(p => p._status === 'error').length }}
+          ・⚫ {{ musicStatusPlayers.filter(p => p._status === 'no_song').length }}
+          ・✅ {{ musicStatusPlayers.filter(p => p._status === 'ok').length }}
+        </div>
+      </div>
+
+      <!-- 球員列表 -->
+      <div class="flex-1 overflow-y-auto">
+        <table class="w-full text-sm">
+          <thead class="text-slate-400 text-xs uppercase sticky top-0 bg-slate-900">
+            <tr>
+              <th class="text-left py-2 px-3">球員</th>
+              <th class="text-left py-2 px-3">隊伍</th>
+              <th class="text-left py-2 px-3">狀態</th>
+              <th class="text-left py-2 px-3">URL</th>
+              <th class="py-2 px-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in musicStatusPlayers" :key="p.id"
+              class="border-t border-slate-800 hover:bg-slate-800/50">
+              <td class="py-2 px-3">
+                <span class="font-bold">{{ p.name }}</span>
+                <span class="text-slate-500 ml-2">#{{ p.number }}</span>
+              </td>
+              <td class="py-2 px-3 text-slate-400 text-xs">{{ p.team }}</td>
+              <td class="py-2 px-3">
+                <span v-if="p._status === 'ok'" class="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded">✅ 正常</span>
+                <span v-else-if="p._status === 'error'" class="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded">🔴 壞掉</span>
+                <span v-else-if="p._status === 'no_song'" class="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded">⚫ 無歌</span>
+                <span v-else class="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded">待驗證</span>
+              </td>
+              <td class="py-2 px-3 text-xs text-slate-500 max-w-xs truncate">{{ p.song || '—' }}</td>
+              <td class="py-2 px-3">
+                <div class="flex gap-2 justify-end">
+                  <button v-if="p.song"
+                    @click="playPreview(p)"
+                    :class="['text-xs px-2 py-1 rounded transition', previewingId === p.id ? 'bg-yellow-500 text-black' : 'bg-slate-700 hover:bg-slate-600 text-white']">
+                    {{ previewingId === p.id ? '⏹ 停止' : '▶ 試播' }}
+                  </button>
+                  <button @click="editPlayer(p)" class="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded transition">編輯</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Toast -->
@@ -474,6 +535,9 @@ async function saveEdit() {
   saving.value = false
   if (error) { showToast('❌ 儲存失敗'); return }
   Object.assign(editingPlayer.value, update)
+  if (editingPlayer.value?.id) {
+    musicStatusMap.value[editingPlayer.value.id] = update.song ? 'pending' : 'no_song'
+  }
   editingPlayer.value = null
   showToast('✅ 已儲存')
 }
