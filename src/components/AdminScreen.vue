@@ -651,6 +651,35 @@ async function deleteChant(c) {
   showToast('🗑️ 已刪除')
 }
 
+async function verifyAllMusic() {
+  const withSong = dbPlayers.value.filter(p => p.song)
+  verifying.value = true
+  verifyTotal.value = withSong.length
+  verifyProgress.value = 0
+
+  // 沒有 song 的直接標為 no_song
+  for (const p of dbPlayers.value.filter(p => !p.song)) {
+    musicStatusMap.value[p.id] = 'no_song'
+  }
+
+  for (const p of withSong) {
+    await new Promise(resolve => {
+      const audio = new Audio()
+      audio.volume = 0
+      const cleanup = () => { audio.src = ''; resolve() }
+      audio.oncanplay = () => { musicStatusMap.value[p.id] = 'ok'; cleanup() }
+      audio.onerror = () => { musicStatusMap.value[p.id] = 'error'; cleanup() }
+      setTimeout(() => { musicStatusMap.value[p.id] = 'error'; cleanup() }, 8000)
+      audio.src = p.song
+      audio.load()
+    })
+    verifyProgress.value++
+  }
+
+  verifying.value = false
+  showToast(`✅ 驗證完成：${withSong.length} 首`)
+}
+
 function showToast(msg) {
   toast.value = msg
   setTimeout(() => toast.value = null, 3000)
