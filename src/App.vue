@@ -7,6 +7,12 @@
     <!-- 通知 -->
     <Notification :notification="notification" />
 
+    <!-- 應援曲播放畫面 -->
+    <ChantPlayerScreen
+      v-if="mode === 'chantPlayer'"
+      @back="mode = 'menu'"
+    />
+
     <!-- 設定頁面 -->
     <AdminScreen
       v-if="mode === 'admin'"
@@ -22,6 +28,7 @@
       @select-mode="selectMode"
       @retry="loadCSVFromURL"
       @go-admin="mode = 'admin'"
+      @go-chant="mode = 'chantPlayer'"
     />
 
     <!-- 選手挑選畫面 -->
@@ -164,6 +171,7 @@ import { supabase } from './lib/supabase.js'
 import Notification from './components/Notification.vue'
 import AdminScreen from './components/AdminScreen.vue'
 import MenuScreen from './components/MenuScreen.vue'
+import ChantPlayerScreen from './components/ChantPlayerScreen.vue'
 import LineupSelectionScreen from './components/LineupSelectionScreen.vue'
 import LineupIntroScreen from './components/LineupIntroScreen.vue'
 import GameScreen from './components/GameScreen.vue'
