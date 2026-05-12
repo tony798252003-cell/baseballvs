@@ -52,6 +52,18 @@
         </button>
       </div>
 
+      <!-- 應援曲模式 -->
+      <div v-if="!isLoading && !loadError" class="mt-4">
+        <button @click="$emit('go-chant')"
+          class="w-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-400 hover:to-rose-400 p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-150 transform hover:scale-105 cursor-pointer flex items-center justify-center gap-3">
+          <span class="text-4xl">🎵</span>
+          <div class="text-left">
+            <div class="text-2xl font-black text-white">應援曲</div>
+            <div class="text-pink-100 font-bold text-sm">點選球員播放加油歌</div>
+          </div>
+        </button>
+      </div>
+
       <div v-if="!isLoading && !loadError" class="flex items-center justify-center gap-4">
         <div class="bg-white border border-slate-200 shadow-sm px-5 py-2 rounded-full">
           <span class="text-slate-600 font-bold text-sm">已載入 {{ rosterCount }} 位球員</span>
@@ -74,5 +86,5 @@ defineProps({
   rosterCount: Number
 });
 
-defineEmits(['select-mode', 'retry', 'go-admin']);
+defineEmits(['select-mode', 'retry', 'go-admin', 'go-chant']);
 </script>
