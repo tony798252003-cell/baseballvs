@@ -282,6 +282,11 @@
       </div>
     </div>
 
+    <!-- 音樂狀態 tab -->
+    <div v-if="activeTab === 'musicStatus'" class="flex-1 overflow-hidden flex flex-col gap-3 p-4">
+      <p class="text-slate-400 text-sm">音樂狀態（施工中）</p>
+    </div>
+
     <!-- Toast -->
     <div v-if="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-full text-sm font-bold shadow-xl z-50">
       {{ toast }}
@@ -301,6 +306,7 @@ const tabs = [
   { id: 'unmapped', label: '🔗 未對應音樂' },
   { id: 'all', label: '📋 所有球員' },
   { id: 'chants', label: '🎵 球隊嗆斯曲' },
+  { id: 'musicStatus', label: '🎧 音樂狀態' },
 ]
 const activeTab = ref('unmapped')
 const searchQuery = ref('')
