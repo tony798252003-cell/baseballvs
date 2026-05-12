@@ -666,10 +666,19 @@ async function verifyAllMusic() {
     await new Promise(resolve => {
       const audio = new Audio()
       audio.volume = 0
-      const cleanup = () => { audio.src = ''; resolve() }
-      audio.oncanplay = () => { musicStatusMap.value[p.id] = 'ok'; cleanup() }
-      audio.onerror = () => { musicStatusMap.value[p.id] = 'error'; cleanup() }
-      setTimeout(() => { musicStatusMap.value[p.id] = 'error'; cleanup() }, 8000)
+      let settled = false
+      let timer = null
+      const cleanup = (status) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        musicStatusMap.value[p.id] = status
+        audio.src = ''
+        resolve()
+      }
+      audio.oncanplay = () => cleanup('ok')
+      audio.onerror = () => cleanup('error')
+      timer = setTimeout(() => cleanup('error'), 8000)
       audio.src = p.song
       audio.load()
     })
