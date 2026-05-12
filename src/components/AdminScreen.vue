@@ -322,6 +322,15 @@ const editingPlayer = ref(null)
 const editForm = ref({})
 const deletingPlayer = ref(null)
 
+// 音樂狀態
+const musicStatusMap = ref({})   // { [playerId]: 'pending' | 'ok' | 'error' | 'no_song' }
+const verifying = ref(false)
+const verifyProgress = ref(0)
+const verifyTotal = ref(0)
+const previewingId = ref(null)
+const previewAudio = ref(null)
+const musicStatusFilter = ref('')
+
 // 嗆斯曲
 const teamChantsData = ref([])
 const chantForm = ref({ team: '', name: '', url: '' })
@@ -360,6 +369,16 @@ const filteredAllPlayers = computed(() => {
   if (searchQuery.value) list = list.filter(p => p.name.includes(searchQuery.value))
   if (filterTeam.value) list = list.filter(p => p.team === filterTeam.value)
   return list
+})
+
+const musicStatusPlayers = computed(() => {
+  const order = { error: 0, no_song: 1, pending: 2, ok: 3 }
+  let list = dbPlayers.value.map(p => ({
+    ...p,
+    _status: musicStatusMap.value[p.id] ?? (p.song ? 'pending' : 'no_song')
+  }))
+  if (musicStatusFilter.value) list = list.filter(p => p.team === musicStatusFilter.value)
+  return list.sort((a, b) => (order[a._status] ?? 4) - (order[b._status] ?? 4))
 })
 
 function parseCSVLine(line) {
