@@ -241,6 +241,68 @@
 
     <!-- 音樂狀態 tab -->
     <div v-if="activeTab === 'musicStatus'" class="flex-1 overflow-hidden flex flex-col gap-3 p-4">
+      <!-- Dropbox 匯入區塊 -->
+      <div class="bg-slate-800 rounded-xl border border-slate-600 overflow-hidden flex-shrink-0">
+        <button @click="playerDropboxSyncOpen = !playerDropboxSyncOpen"
+          class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-700 transition">
+          <span class="font-bold text-sm">☁️ Dropbox 匯入</span>
+          <span class="text-slate-400 text-xs">{{ playerDropboxSyncOpen ? '▲ 收折' : '▼ 展開' }}</span>
+        </button>
+
+        <div v-if="playerDropboxSyncOpen" class="px-4 pb-4 space-y-3 border-t border-slate-700">
+          <div class="flex gap-2 pt-3">
+            <input
+              v-model="dropboxToken"
+              type="password"
+              placeholder="Dropbox Access Token"
+              class="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
+            />
+          </div>
+          <div class="flex gap-2">
+            <input
+              v-model="playerDropboxFolder"
+              placeholder="資料夾路徑（如 /Music/Players）"
+              class="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
+            />
+            <button
+              @click="scanPlayerDropbox"
+              :disabled="playerDropboxScanning"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition disabled:opacity-50 whitespace-nowrap"
+            >
+              {{ playerDropboxScanning ? '讀取中...' : '掃描' }}
+            </button>
+          </div>
+
+          <div v-if="playerDropboxPreview.length > 0" class="space-y-2">
+            <div class="text-sm font-bold text-green-400">找到 {{ playerDropboxPreview.length }} 筆可匯入：</div>
+            <div v-for="item in playerDropboxPreview" :key="item.key"
+              class="flex items-center gap-3 px-3 py-2 bg-slate-900 rounded-lg border border-slate-700">
+              <input type="checkbox" v-model="item.checked" class="w-4 h-4 cursor-pointer" />
+              <span :class="['text-xs px-2 py-0.5 rounded whitespace-nowrap', item.status === 'new' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400']">
+                {{ item.status === 'new' ? `新增：${item.kind}` : `覆蓋：${item.kind}` }}
+              </span>
+              <div class="flex-1">
+                <span class="text-xs text-slate-400 mr-2">{{ item.team }}</span>
+                <span class="text-sm font-bold">{{ item.name }}</span>
+                <div v-if="item.status === 'overwrite'" class="text-xs text-slate-500 truncate">目前：{{ item.currentValue }}</div>
+              </div>
+            </div>
+            <button
+              @click="confirmPlayerDropboxImport"
+              :disabled="playerDropboxConfirming || playerDropboxPreview.filter(i => i.checked).length === 0"
+              class="w-full py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-bold transition disabled:opacity-50"
+            >
+              {{ playerDropboxConfirming ? '匯入中...' : `確認匯入 ${playerDropboxPreview.filter(i => i.checked).length} 筆` }}
+            </button>
+          </div>
+
+          <div v-if="playerDropboxUnparsed.length > 0" class="space-y-1">
+            <div class="text-xs text-yellow-400 font-bold">⚠ 無法處理：</div>
+            <div v-for="entry in playerDropboxUnparsed" :key="entry.name" class="text-xs text-slate-500 pl-2">{{ entry.name }} — {{ entry.reason }}</div>
+          </div>
+        </div>
+      </div>
+
       <!-- 工具列 -->
       <div class="flex items-center gap-3 flex-shrink-0">
         <button
@@ -364,6 +426,14 @@ const dropboxSyncing = ref(false)
 const dropboxPreview = ref([])   // [{ team, name, path, checked }]
 const dropboxConfirming = ref(false)
 const dropboxUnparsed = ref([])  // 無法解析的檔名
+
+// 球員應援歌 Dropbox 匯入
+const playerDropboxFolder = ref('/Music/Players')
+const playerDropboxSyncOpen = ref(false)
+const playerDropboxScanning = ref(false)
+const playerDropboxPreview = ref([])    // [{ key, team, name, kind: 'song'|'intro', status: 'new'|'overwrite', dropboxPath, currentValue, checked }]
+const playerDropboxUnparsed = ref([])   // [{ name, reason }]
+const playerDropboxConfirming = ref(false)
 
 const allPositions = ['SP', 'RP', 'CP', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH']
 
@@ -588,6 +658,140 @@ async function confirmDropboxAdd() {
     showToast(`✅ 已新增 ${added} 首（⚠ ${failed} 筆失敗）`)
   } else {
     showToast(`✅ 已新增 ${added} 首應援曲`)
+  }
+}
+
+function parsePlayerDropboxFilename(filename) {
+  const base = filename.replace(/\.mp3$/i, '')
+  const introMatch = base.match(/^(.*?)\s*-\s*(.+?)\s*-\s*intro$/i)
+  if (introMatch) return { team: introMatch[1].trim(), name: introMatch[2].trim(), kind: 'intro' }
+  const songMatch = base.match(/^(.*?)\s*-\s*(.+)$/)
+  if (songMatch) return { team: songMatch[1].trim(), name: songMatch[2].trim(), kind: 'song' }
+  return null
+}
+
+async function scanPlayerDropbox() {
+  if (!dropboxToken.value.trim()) {
+    showToast('❌ 請輸入 Access Token')
+    return
+  }
+  playerDropboxScanning.value = true
+  playerDropboxPreview.value = []
+  playerDropboxUnparsed.value = []
+
+  try {
+    const listRes = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${dropboxToken.value.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ path: playerDropboxFolder.value }),
+    })
+
+    if (listRes.status === 401) { showToast('❌ Token 無效或已過期'); return }
+    if (!listRes.ok) { showToast('❌ Dropbox 連線失敗'); return }
+
+    const listData = await listRes.json()
+    const mp3Files = listData.entries.filter(e => e.name.toLowerCase().endsWith('.mp3'))
+
+    const preview = []
+    const unparsed = []
+
+    for (const file of mp3Files) {
+      const parsed = parsePlayerDropboxFilename(file.name)
+      if (!parsed) { unparsed.push({ name: file.name, reason: '格式錯誤（需為「球隊 - 姓名.mp3」或「球隊 - 姓名 - Intro.mp3」）' }); continue }
+
+      const matches = dbPlayers.value.filter(p => p.team === parsed.team && p.name === parsed.name)
+      if (matches.length === 0) { unparsed.push({ name: file.name, reason: `找不到球員（${parsed.team} - ${parsed.name}）` }); continue }
+      if (matches.length > 1) { unparsed.push({ name: file.name, reason: `同隊同名有 ${matches.length} 筆，需手動處理` }); continue }
+
+      const player = matches[0]
+      const currentValue = parsed.kind === 'intro' ? player.intro : player.song
+      preview.push({
+        key: file.path_lower,
+        playerId: player.id,
+        team: parsed.team,
+        name: parsed.name,
+        kind: parsed.kind,
+        status: currentValue ? 'overwrite' : 'new',
+        dropboxPath: file.path_lower,
+        currentValue: currentValue || '',
+        checked: !currentValue,
+      })
+    }
+
+    playerDropboxPreview.value = preview
+    playerDropboxUnparsed.value = unparsed
+
+    if (preview.length === 0 && unparsed.length === 0) {
+      showToast('✅ 已是最新，無新增項目')
+    }
+  } catch (e) {
+    showToast('❌ Dropbox 連線失敗')
+  } finally {
+    playerDropboxScanning.value = false
+  }
+}
+
+async function confirmPlayerDropboxImport() {
+  const selected = playerDropboxPreview.value.filter(item => item.checked)
+  if (selected.length === 0) return
+
+  playerDropboxConfirming.value = true
+  let added = 0
+  let failed = 0
+
+  try {
+    for (const item of selected) {
+      try {
+        let url = ''
+        const linkRes = await fetch('https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${dropboxToken.value.trim()}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ path: item.dropboxPath, settings: { requested_visibility: 'public' } }),
+        })
+
+        if (linkRes.status === 409) {
+          const errData = await linkRes.json()
+          url = errData?.error?.shared_link_already_exists?.metadata?.url || ''
+        } else if (linkRes.ok) {
+          const linkData = await linkRes.json()
+          url = linkData.url || ''
+        } else {
+          failed++
+          continue
+        }
+
+        if (!url) { failed++; continue }
+        url = url.includes('?dl=0') ? url.replace('?dl=0', '?raw=1') : url + (url.includes('?') ? '&raw=1' : '?raw=1')
+
+        const field = item.kind === 'intro' ? 'intro' : 'song'
+        const { error } = await supabase.from('players').update({ [field]: url }).eq('id', item.playerId)
+        if (error) { console.error(`[Player Dropbox Sync] update failed for "${item.team} - ${item.name}":`, error); failed++; continue }
+
+        const idx = dbPlayers.value.findIndex(p => p.id === item.playerId)
+        if (idx >= 0) dbPlayers.value[idx][field] = url
+        if (field === 'song') musicStatusMap.value[item.playerId] = 'pending'
+        added++
+      } catch (e) {
+        console.error(`[Player Dropbox Sync] exception for "${item.team} - ${item.name}":`, e)
+        failed++
+      }
+    }
+  } finally {
+    playerDropboxConfirming.value = false
+    playerDropboxPreview.value = []
+    playerDropboxUnparsed.value = []
+  }
+
+  if (failed > 0) {
+    showToast(`✅ 已匯入 ${added} 首（⚠ ${failed} 筆失敗）`)
+  } else {
+    showToast(`✅ 已匯入 ${added} 首應援歌`)
   }
 }
 
