@@ -89,8 +89,15 @@ async function main() {
   checkFfmpeg()
 
   const player = await pickPlayer()
-  const kindAnswer = (await ask('這次是 song（循環）還是 intro（進場播一次）？[song/intro]：')).toLowerCase()
-  const kind = kindAnswer === 'intro' ? 'intro' : 'song'
+  let kind = null
+  while (kind !== 'song' && kind !== 'intro') {
+    const kindAnswer = (await ask('這次是 song（循環）還是 intro（進場播一次）？[song/intro]：')).toLowerCase()
+    if (kindAnswer === 'song' || kindAnswer === 'intro') {
+      kind = kindAnswer
+    } else {
+      console.log('請輸入 song 或 intro')
+    }
+  }
 
   const tmpDir = mkdtempSync(join(tmpdir(), 'add-player-song-'))
   const parts = []
