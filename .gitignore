@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 .env
+
+# Brainstorming mockup scratch space
+.superpowers/
