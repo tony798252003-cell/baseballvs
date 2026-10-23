@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>應援曲工作台</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--fg:#1d1d1f;--dim:#777;--acc:#8a1c2b;--flag:#b45309;--ok:#15803d;--err:#b91c1c;--btn:#f3f4f6;--line:#ddd}
+@media (prefers-color-scheme:dark){:root{--bg:#151515;--card:#222;--fg:#eee;--dim:#999;--acc:#f87171;--flag:#fbbf24;--ok:#4ade80;--err:#f87171;--btn:#333;--line:#444}}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"PingFang TC",sans-serif;margin:0}
+a{color:var(--acc)}
+.bar{position:sticky;top:0;z-index:9;background:var(--card);border-bottom:1px solid var(--line);padding:8px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.bar h1{font-size:17px;margin:0}
+.bar .counts{font-size:13px;color:var(--dim)}
+.bar select,.bar button{font-size:13px;padding:4px 8px}
+#summary{padding:0 16px;font-size:13px}
+#summary .box{background:var(--card);border-radius:8px;padding:8px 12px;margin-top:10px;box-shadow:0 1px 3px #0002}
+main{padding:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));gap:14px;align-items:start}
+.card{background:var(--card);border-radius:10px;padding:14px;box-shadow:0 1px 3px #0002;min-width:0}
+.card.resolved{outline:2px solid var(--ok)}
+.card.skipped,.card.notfound{opacity:.7}
+.card h2{font-size:17px;margin:0 0 6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.card h2 small{color:var(--dim);font-weight:400}
+.badge{font-size:12px;border-radius:4px;padding:1px 6px;font-weight:400;background:var(--btn)}
+.badge.resolved{background:var(--ok);color:#fff}.badge.error,.badge.notfound{background:var(--flag);color:#000}
+.badge.low{background:var(--flag);color:#000}
+.dim,small{color:var(--dim);font-size:13px}
+.pick{margin:4px 0;font-size:14px}
+.why{font-size:12px;color:var(--dim)}
+.alts{font-size:12px;color:var(--dim);margin:2px 0 0;padding-left:18px}
+.err{color:var(--err);font-size:13px}
+.tune{border-top:1px dashed #bbb;margin-top:10px;padding-top:8px}
+.tune canvas{width:100%;display:block;border-radius:4px;background:#111;cursor:ew-resize;touch-action:none}
+.tune .wave{height:90px}.tune .za,.tune .zb{height:60px}
+.tune .zooms{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.row{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin:4px 0;font-size:12px}
+.row button,.actions button{padding:3px 7px;font-size:12px;border:1px solid #888;border-radius:4px;background:var(--btn);color:var(--fg);cursor:pointer}
+.row button.pri{background:#6d9dc5;color:#fff;border-color:#6d9dc5}
+.row button:disabled,.actions button:disabled{opacity:.5;cursor:default}
+.lbl{min-width:120px;font-family:ui-monospace,monospace}
+.pos{color:#ff3b30}
+.actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.actions input[type=url]{flex:1;min-width:180px;font-size:12px;padding:3px 6px}
+.msg{font-size:12px}.msg.ok{color:var(--ok)}.msg.bad{color:var(--err)}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>應援曲工作台</h1>
+  <span id="batch" class="dim"></span>
+  <span id="counts" class="counts"></span>
+  <label class="dim">篩選
+    <select id="filter">
+      <option value="">全部</option>
+      <option value="pending">待處理</option>
+      <option value="resolved">✅ 已解決</option>
+      <option value="skipped">⏭ 跳過</option>
+      <option value="notfound">找不到</option>
+      <option value="error">錯誤</option>
+    </select>
+  </label>
+  <button id="submit">📤 送出已解決的</button>
+  <span id="processing" class="dim"></span>
+</div>
+<div id="summary"></div>
+<main><div id="cards" class="grid"><p class="dim">載入中…</p></div></main>
+<script src="app.js"></script>
+</body>
+</html>
