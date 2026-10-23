@@ -24,6 +24,8 @@ test('資料庫既有球隊名都能解析到有 org 的正式隊名（否則球
 test('別名正規化成正式隊名', () => {
   assert.equal(canonicalTeamName('LA道奇'), '洛杉磯道奇')
   assert.equal(canonicalTeamName('西武獅'), '埼玉西武獅')
+  assert.equal(canonicalTeamName('道奇'), '洛杉磯道奇')
+  assert.equal(canonicalTeamName('東北樂天'), '東北樂天金鷹')
   assert.equal(canonicalTeamName('日本火腿'), '北海道火腿鬥士')
   assert.equal(canonicalTeamName('教士'), '聖地牙哥教士')
   assert.equal(canonicalTeamName('波士頓紅襪體系'), '波士頓紅襪')
