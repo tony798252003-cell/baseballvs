@@ -72,3 +72,16 @@ test('fetchNpbRoster fetches the team players page with a browser UA and throws 
   const bad = async () => ({ ok: false, status: 404, text: async () => '' })
   await assert.rejects(() => fetchNpbRoster(10, { fetchImpl: bad }), /404/)
 })
+
+test('main_position comes from the section title (pitchers must be P or the app treats them as batters)', () => {
+  const rows = parseNpbRoster(giants, { team: TEAM })
+  for (const pos of ['P', 'C', 'IF', 'OF']) assert.ok(rows.some((r) => r.main_position === pos), pos)
+  assert.equal(rows.find((r) => r.name === '田中将大').main_position, 'P')
+  assert.equal(rows.find((r) => r.name === '甲斐拓也').main_position, 'C')
+  assert.ok(rows.every((r) => r.main_position))
+})
+
+test('unknown section title omits main_position', () => {
+  const [row] = parseNpbRoster(page(['謎', item('1', 'A')]), { team: TEAM })
+  assert.ok(!('main_position' in row))
+})

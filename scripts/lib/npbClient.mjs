@@ -3,6 +3,8 @@ import { parse } from 'node-html-parser'
 export const BASE_URL = 'https://baseball.yahoo.co.jp'
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 const STAFF_SECTION = '監督・コーチ'
+// 球隊頁分區標題 → App 的 main_position 代碼（同 cpbl 的 POSITION_CATEGORY_MAP）
+const POSITION_BY_SECTION = { 投手: 'P', 捕手: 'C', 内野手: 'IF', 外野手: 'OF' }
 
 // 缺值一律省略屬性（不給 null / ''），避免一次失靈的爬取把 DB 既有值洗掉
 function omitEmpty(obj) {
@@ -19,7 +21,8 @@ export function parseNpbRoster(html, { team }) {
   const root = parse(html)
   const rows = []
   for (const section of root.querySelectorAll('section')) {
-    if (section.querySelector('.bb-head01__title')?.text.trim() === STAFF_SECTION) continue
+    const title = section.querySelector('.bb-head01__title')?.text.trim()
+    if (title === STAFF_SECTION) continue
     for (const item of section.querySelectorAll('.bb-playerList__item')) {
       const id = item.querySelector('a.bb-playerList__link')?.getAttribute('href')?.match(/\/npb\/player\/(\d+)\//)?.[1]
       const name = stripSpaces(item.querySelector('.bb-playerList__name')?.text ?? '')
@@ -32,6 +35,7 @@ export function parseNpbRoster(html, { team }) {
           team,
           photo: item.querySelector('img.bb-playerList__img')?.getAttribute('src')?.trim(),
           league: leagueOf(number),
+          main_position: POSITION_BY_SECTION[title],
         }),
         key: id,
         roster_mark: null,

@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { loadEnv, createServiceClient } from './lib/env.mjs'
 import { fetchNpbRoster, parseNpbRoster } from './lib/npbClient.mjs'
 import { planRosterSync, checkSafetyValve } from './lib/rosterSync.mjs'
-import { matchNpbUnkeyed, filterNpbUpdates, dedupeByKey, planUnlinkedDepartures } from './lib/npbSync.mjs'
+import { matchNpbUnkeyed, filterNpbUpdates, dedupeByKey, planUnlinkedDepartures, fillEmptyPosition } from './lib/npbSync.mjs'
 import { buildSummary } from './lib/syncSummary.mjs'
 import { TEAMS } from '../src/constants/teams.js'
 
@@ -93,7 +93,7 @@ async function main() {
   const linked = dbPlayers.map((r) => (linkById.has(r.id) ? { ...r, npb_id: linkById.get(r.id) } : r))
 
   const planned = planRosterSync({ dbPlayers: linked, scraped, org: 'NPB', keyField: 'npb_id' })
-  const plan = { ...planned, updates: filterNpbUpdates(planned.updates, linked) }
+  const plan = { ...planned, updates: fillEmptyPosition(filterNpbUpdates(planned.updates, linked), scraped, linked) }
 
   const patches = new Map(plan.updates.map((u) => [u.id, { ...u.patch }]))
   for (const [id, key] of linkById) patches.set(id, { npb_id: key, ...patches.get(id) })

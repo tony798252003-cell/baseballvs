@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeNpbName, matchNpbUnkeyed, filterNpbUpdates, dedupeByKey, planUnlinkedDepartures } from './npbSync.mjs'
+import { normalizeNpbName, matchNpbUnkeyed, filterNpbUpdates, dedupeByKey, planUnlinkedDepartures, fillEmptyPosition } from './npbSync.mjs'
 
 const db = (id, name, extra = {}) => ({ id, name, org: 'NPB', npb_id: null, is_coach: false, ...extra })
 
@@ -47,4 +47,17 @@ test('planUnlinkedDepartures: unkeyed, unlinked active NPB players depart; linke
     db(6, '早走', { status: 'departed' }),
   ]
   assert.deepEqual(planUnlinkedDepartures(rows, new Set([2])), [{ id: 1, name: '林家正', team: '北海道火腿鬥士' }])
+})
+
+test('fillEmptyPosition fills only empty DB positions, merges into existing patches, never overwrites', () => {
+  const dbRows = [
+    { id: 1, npb_id: '10', main_position: null }, { id: 2, npb_id: '11', main_position: '' },
+    { id: 3, npb_id: '12', main_position: 'SP' }, { id: 4, npb_id: '13', main_position: null },
+  ]
+  const scraped = [
+    { key: '10', main_position: 'P' }, { key: '11', main_position: 'C' },
+    { key: '12', main_position: 'P' }, { key: '13' },
+  ]
+  const out = fillEmptyPosition([{ id: 1, patch: { number: '5' } }], scraped, dbRows)
+  assert.deepEqual(out, [{ id: 1, patch: { number: '5', main_position: 'P' } }, { id: 2, patch: { main_position: 'C' } }])
 })

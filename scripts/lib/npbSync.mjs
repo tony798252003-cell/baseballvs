@@ -60,3 +60,22 @@ export function dedupeByKey(scraped) {
   }
   return kept
 }
+
+// planner 不更新 main_position（僅新增時寫入），所以 NPB 另外補：DB 為空才填，絕不覆蓋既有值
+export function fillEmptyPosition(updates, scraped, dbPlayers) {
+  const posByKey = new Map(scraped.filter((s) => s.main_position).map((s) => [String(s.key), s.main_position]))
+  const out = updates.map((u) => ({ ...u, patch: { ...u.patch } }))
+  const byId = new Map(out.map((u) => [u.id, u]))
+  for (const r of dbPlayers) {
+    const pos = r.npb_id != null ? posByKey.get(String(r.npb_id)) : undefined
+    if (!pos || !isEmpty(r.main_position)) continue
+    const u = byId.get(r.id)
+    if (u) u.patch.main_position = pos
+    else {
+      const fresh = { id: r.id, patch: { main_position: pos } }
+      out.push(fresh)
+      byId.set(r.id, fresh)
+    }
+  }
+  return out
+}
