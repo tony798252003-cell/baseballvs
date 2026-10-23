@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -45,13 +45,26 @@ test('computeGainDb = target - integrated + slider', () => {
   assert.equal(computeGainDb({ integratedLufs: -10 }), -4)
 })
 
+// A near-silent source must not be boosted by 50+ dB (noise floor blown up into the limiter).
+test('computeGainDb clamps to +-20 dB', () => {
+  assert.equal(computeGainDb({ integratedLufs: -70 }), 20)
+  assert.equal(computeGainDb({ integratedLufs: 30 }), -20)
+})
+
+// ebur128 reports -inf for silence; that must stop the render with a clear reason, not produce volume=infdB.
+test('computeGainDb throws on non-finite loudness', () => {
+  assert.throws(() => computeGainDb({ integratedLufs: -Infinity }), /silent or unreadable/)
+  assert.throws(() => computeGainDb({ integratedLufs: NaN }), /silent or unreadable/)
+})
+
 // The render must apply gain, peak-limit to -1 dBTP, fade both ends and encode high-quality VBR with a gapless header.
 test('buildRenderArgs contains volume, limiter, both fades, V0 and the Xing/LAME header', () => {
   const args = buildRenderArgs({ src: 'in.webm', out: 'out.mp3', start: 4, end: 20, fadeInMs: 100, fadeOutMs: 150, gainDb: 3.5 })
   const af = args[args.indexOf('-af') + 1]
   assert.match(af, /atrim=start=4:end=20/)
   assert.match(af, /volume=3\.5dB/)
-  assert.match(af, /alimiter=limit=0\.891251:level=false/)
+  // Limiter runs 4x oversampled (true-peak aware) with a -2 dB ceiling, then back to 44.1 kHz.
+  assert.match(af, /aresample=176400,alimiter=limit=0\.794328:level=false:latency=true,aresample=44100/)
   assert.match(af, /afade=t=in:st=0:d=0\.1/)
   assert.match(af, /afade=t=out:st=15\.85:d=0\.15/)
   assert.equal(args[args.indexOf('-q:a') + 1], '0')
@@ -66,6 +79,37 @@ test('buildRenderArgs whole-file mode (no fades) emits no afade', () => {
   const af = args[args.indexOf('-af') + 1]
   assert.doesNotMatch(af, /afade/)
   assert.match(af, /atrim=start=0:end=61\.2/)
+})
+
+// A fade longer than the cut would give afade a negative start and an overlapping fade-in/out.
+test('buildRenderArgs clamps fades to half the cut', () => {
+  const args = buildRenderArgs({ src: 'a', out: 'b', start: 1, end: 1.2, fadeInMs: 300, fadeOutMs: 300, gainDb: 0 })
+  const af = args[args.indexOf('-af') + 1]
+  const fin = af.match(/afade=t=in:st=([-\d.e]+):d=([-\d.e]+)/)
+  const fout = af.match(/afade=t=out:st=([-\d.e]+):d=([-\d.e]+)/)
+  assert.ok(Math.abs(Number(fin[2]) - 0.1) < 1e-9, af)
+  assert.ok(Math.abs(Number(fout[2]) - 0.1) < 1e-9, af)
+  assert.ok(Number(fout[1]) >= 0 && Math.abs(Number(fout[1]) + Number(fout[2]) - 0.2) < 1e-9, af)
+})
+
+// A non-executable file (or directory) named like the binary on PATH must not be picked over a real one.
+test('findBinary skips non-executable PATH entries', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'findbin-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const fake = join(dir, 'ffmpeg')
+  writeFileSync(fake, 'not a binary', { mode: 0o644 })
+  mkdirSync(join(dir, 'yt-dlp'))
+  const oldPath = process.env.PATH
+  process.env.PATH = dir
+  try {
+    for (const name of ['ffmpeg', 'yt-dlp']) {
+      let found = null
+      try { found = findBinary(name) } catch (e) { assert.match(e.message, /not found/) }
+      assert.notEqual(found, join(dir, name))
+    }
+  } finally {
+    process.env.PATH = oldPath
+  }
 })
 
 let ffmpegMissing = false
@@ -103,14 +147,23 @@ test('integration: rendered song/intro decode to exact cut lengths and peaks sta
     assert.equal(introPath, null)
   })
 
-  // Loud sources plus positive gain must not clip on playback.
-  await t.test('true peak after +6 dB on near-full-scale input stays <= -1 dBTP (+0.2)', async () => {
-    const loud = makeSignal(dir, 'loud.wav', 0.99)
-    const out = join(dir, 'loud.mp3')
-    await renderCut({ src: loud, out, start: 4, end: 20, fadeInMs: 100, fadeOutMs: 100, gainDb: 6 })
-    const { truePeakDb } = await measureLoudness(out)
-    assert.ok(truePeakDb <= -1.0 + 0.2, `true peak ${truePeakDb} dBTP`)
-  })
+  // Loud sources plus positive gain must not clip on playback. Clipped wideband noise and an HF square wave
+  // have inter-sample peaks and mp3-encoder overshoot that a plain sample-peak limiter lets through.
+  for (const [name, lavfi] of [
+    ['clipped white noise', 'anoisesrc=a=1:c=white:d=30:r=44100,volume=12dB'],
+    ['3 kHz square', 'aevalsrc=0.99*sgn(sin(2*PI*3000*t)):s=44100:d=30'],
+  ]) {
+    await t.test(`true peak of ${name} after +6 dB stays <= -1 dBTP (+0.2)`, async () => {
+      const wav = join(dir, `${name}.wav`)
+      const r = spawnSync(findBinary('ffmpeg'), ['-hide_banner', '-y', '-f', 'lavfi', '-i', lavfi, '-ac', '2', '-c:a', 'pcm_s16le', wav])
+      assert.equal(r.status, 0, r.stderr?.toString())
+      const out = join(dir, `${name}.mp3`)
+      await renderCut({ src: wav, out, start: 4, end: 20, fadeInMs: 100, fadeOutMs: 100, gainDb: 6 })
+      const { truePeakDb } = await measureLoudness(out)
+      assert.ok(truePeakDb <= -1.0 + 0.2, `true peak ${truePeakDb} dBTP`)
+      assert.ok(Math.abs((await decodeDurationSec(out)) - 16) <= 0.01)
+    })
+  }
 
   // Whole-file re-encode of an existing song must keep its length (no added delay/padding).
   await t.test('whole-file re-encode keeps duration', async () => {
