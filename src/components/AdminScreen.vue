@@ -889,12 +889,16 @@ async function logout() {
 
 let authSub = null
 onMounted(async () => {
-  const { data } = await supabase.auth.getSession()
-  session.value = data.session
+  try {
+    const { data } = await supabase.auth.getSession()
+    session.value = data.session
+  } catch (e) {
+    session.value = null
+  }
   const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => { session.value = s })
   authSub = sub.subscription
 })
 onUnmounted(() => authSub?.unsubscribe())
 
-watch(session, (s) => { if (s) loadData() })
+watch(() => !!session.value, (on) => { if (on) loadData() })
 </script>
