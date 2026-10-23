@@ -13,8 +13,13 @@ const BEATS_PER_BAR = 4
 const LAG_TOLERANCE = 0.02 // tempo estimate error allowed around n * bar
 const MATCH_WINDOW_SEC = 3
 const BEAT_SNAP_SEC = 0.1
-const SHORTER_LOOP_RATIO = 0.92 // prefer the shortest loop scoring within this ratio of the best
+const SHORTER_LOOP_RATIO = 0.85 // prefer the shortest loop whose contrast is within this ratio of the best
 const INTRO_MIN_SEC = 2
+const INTRO_MIN_CONFIDENCE = 0.3
+const FFT_SEC = 0.023 // FFT window for the spectral-shape features (256 points at 11025 Hz)
+const SHAPE_BANDS = 16
+const SHAPE_MIN_HZ = 100
+const SHAPE_MAX_HZ = 5000
 
 // Log energy per frame for a few frequency bands (one-pole filter differences).
 function bandEnergies(pcm, sampleRate, hop) {
@@ -104,13 +109,16 @@ function pickOnsets(env, hopSec) {
 // Beat period in frames: comb over onset autocorrelation (period plus its first multiples, so a
 // lone sub-beat peak does not win), with a mild prior around 120 BPM. Searching only 100-200 BPM
 // means a half-time chant gets the faster beat, whose bars still include every real bar length.
+// Bars are assumed 4/4: a 3/4 loop is only found when it happens to be a whole number of 4-beat
+// bars, otherwise its double (two loops) can come back as the suggested length.
 function beatPeriodFrames(env, hopSec) {
   const n = env.length
   const { mean } = meanStd(env)
   const minLag = Math.round(0.3 / hopSec)
   const maxLag = Math.round(0.6 / hopSec)
   const multiples = 4
-  const ac = new Float64Array(maxLag * multiples + 2)
+  // comb() reads up to round(multiples * (maxLag + 1)) during sub-frame refinement.
+  const ac = new Float64Array((maxLag + 1) * multiples + 1)
   for (let lag = 1; lag < ac.length && lag < n; lag++) {
     let s = 0
     for (let i = 0; i + lag < n; i++) s += (env[i] - mean) * (env[i + lag] - mean)
@@ -135,6 +143,97 @@ function beatPeriodFrames(env, hopSec) {
   let refined = best
   for (let p = best - 1; p <= best + 1; p += 0.05) if (comb(p) > comb(refined)) refined = p
   return refined
+}
+
+// In-place radix-2 complex FFT (length must be a power of two).
+function fft(re, im) {
+  const n = re.length
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1
+    for (; j & bit; bit >>= 1) j ^= bit
+    j ^= bit
+    if (i < j) {
+      let tmp = re[i]
+      re[i] = re[j]
+      re[j] = tmp
+      tmp = im[i]
+      im[i] = im[j]
+      im[j] = tmp
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >> 1
+    const wr = Math.cos((-2 * Math.PI) / len)
+    const wi = Math.sin((-2 * Math.PI) / len)
+    for (let i = 0; i < n; i += len) {
+      let cr = 1
+      let ci = 0
+      for (let k = 0; k < half; k++) {
+        const a = i + k
+        const b = a + half
+        const tr = re[b] * cr - im[b] * ci
+        const ti = re[b] * ci + im[b] * cr
+        re[b] = re[a] - tr
+        im[b] = im[a] - ti
+        re[a] += tr
+        im[a] += ti
+        const next = cr * wr - ci * wi
+        ci = cr * wi + ci * wr
+        cr = next
+      }
+    }
+  }
+}
+
+// Repeat-matching features per frame: spectral shape (log energy in log-spaced FFT bands minus
+// the frame mean) plus that mean as loudness. On a steady drum grid every whole-beat lag lines up
+// the loudness envelope, so only shape (which drum / which layer) tells a real repeat apart.
+// Returns { feats, shapeBands }: feats[0..shapeBands-1] are shape, feats[shapeBands] is loudness.
+function spectralFeatures(pcm, sampleRate, hop, n) {
+  let size = 1
+  while (size < sampleRate * FFT_SEC) size *= 2
+  const hz = sampleRate / size
+  const top = Math.min(SHAPE_MAX_HZ, sampleRate * 0.45)
+  const ranges = []
+  let prev = Math.max(1, Math.round(SHAPE_MIN_HZ / hz))
+  for (let b = 1; b <= SHAPE_BANDS; b++) {
+    const edge = Math.min(size / 2, Math.round((SHAPE_MIN_HZ * (top / SHAPE_MIN_HZ) ** (b / SHAPE_BANDS)) / hz))
+    if (edge > prev) {
+      ranges.push([prev, edge])
+      prev = edge
+    }
+  }
+  const nb = ranges.length
+  const feats = Array.from({ length: nb + 1 }, () => new Float32Array(n))
+  const window = Float64Array.from({ length: size }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / size))
+  const re = new Float64Array(size)
+  const im = new Float64Array(size)
+  const logE = new Float64Array(nb)
+  for (let f = 0; f < n; f++) {
+    const start = f * hop - size / 2 // centre the FFT window on the frame start
+    for (let i = 0; i < size; i++) {
+      const j = start + i
+      re[i] = j >= 0 && j < pcm.length ? pcm[j] * window[i] : 0
+      im[i] = 0
+    }
+    fft(re, im)
+    let mean = 0
+    for (let b = 0; b < nb; b++) {
+      let e = 0
+      for (let k = ranges[b][0]; k < ranges[b][1]; k++) e += re[k] * re[k] + im[k] * im[k]
+      logE[b] = Math.log(e / (ranges[b][1] - ranges[b][0]) + 1e-10)
+      mean += logE[b] / nb
+    }
+    for (let b = 0; b < nb; b++) feats[b][f] = logE[b] - mean
+    feats[nb][f] = mean
+  }
+  // z-score each shape band over time: every frame of music shares the same spectral tilt, which
+  // would make any two frames look alike; what identifies a passage is the deviation from it.
+  for (let b = 0; b < nb; b++) {
+    const { mean, std } = meanStd(feats[b])
+    for (let f = 0; f < n; f++) feats[b][f] = std > 0 ? (feats[b][f] - mean) / std : 0
+  }
+  return { feats, shapeBands: nb }
 }
 
 function zScore(bands) {
@@ -191,8 +290,10 @@ function percentile(arr, p) {
 
 // Start of the repeat: the first window that matches well gives a coarse start; the exact frame
 // is where the running sum of (match - half the matched level) bottoms out, i.e. where frames stop
-// matching worse than the repeat and start matching like it.
-function repeatStart(c, z, lag, n, win) {
+// matching worse than the repeat and start matching like it. The per-frame match is the cosine of
+// the two spectral-shape vectors, so "both loud" (a noisy lead-in against a loud loop tail) does
+// not count as a match, only "same shape" does.
+function repeatStart(c, feats, shapeBands, lag, n, win) {
   const threshold = 0.6 * percentile(c, 0.9)
   let coarse = c.findIndex((v) => v >= threshold)
   if (coarse < 0) coarse = 0
@@ -201,9 +302,19 @@ function repeatStart(c, z, lag, n, win) {
   score /= c.length - coarse
 
   const p = new Float64Array(n - lag)
-  for (const band of z) for (let t = 0; t < p.length; t++) p[t] += (band[t] * band[t + lag]) / z.length
-  // Clip so one dropout (both sides near-silent -> huge z product) cannot drag the start.
-  for (let t = 0; t < p.length; t++) p[t] = Math.max(-1, Math.min(1, p[t]))
+  for (let t = 0; t < p.length; t++) {
+    let dot = 0
+    let xx = 0
+    let yy = 0
+    for (let b = 0; b < shapeBands; b++) {
+      const x = feats[b][t]
+      const y = feats[b][t + lag]
+      dot += x * y
+      xx += x * x
+      yy += y * y
+    }
+    p[t] = xx > 1e-9 && yy > 1e-9 ? dot / Math.sqrt(xx * yy) : 0
+  }
   let level = 0
   for (let t = coarse; t < p.length; t++) level += p[t]
   const half = level / (p.length - coarse) / 2
@@ -257,15 +368,24 @@ export function suggestCut(pcm, sampleRate) {
     if (bestLag > 0) lags.add(bestLag)
   }
 
+  const { feats, shapeBands } = spectralFeatures(pcm, sampleRate, hop, n)
   const candidates = []
   for (const lag of lags) {
-    const c = windowedMatch(bands, lag, n, win)
-    if (c) candidates.push({ lag, ...repeatStart(c, z, lag, n, win) })
+    const c = windowedMatch(feats, lag, n, win)
+    if (c) candidates.push({ lag, ...repeatStart(c, feats, shapeBands, lag, n, win) })
   }
   if (!candidates.length) return fallback
-  const top = Math.max(...candidates.map((k) => k.score))
-  // `|| k.score === top` keeps the best candidate when every score is negative.
-  const chosen = candidates.filter((k) => k.score >= top * SHORTER_LOOP_RATIO || k.score === top).sort((a, b) => a.lag - b.lag)[0]
+  // Contrast, not raw score: on steady-beat material every bar lag matches fairly well, so a loop
+  // only counts by how far it stands above the typical (median) candidate.
+  const sorted = candidates.map((k) => k.score).sort((a, b) => a - b)
+  const baseline = sorted[Math.floor((sorted.length - 1) / 2)]
+  for (const k of candidates) k.contrast = k.score - baseline
+  const top = Math.max(...candidates.map((k) => k.contrast))
+  // `|| k.contrast === top` keeps the best candidate when no contrast is positive.
+  const chosen = candidates
+    .filter((k) => k.contrast >= top * SHORTER_LOOP_RATIO || k.contrast === top)
+    .sort((a, b) => a.lag - b.lag)[0]
+  const confidence = baseline < 1 ? Math.min(1, Math.max(0, chosen.contrast / (1 - baseline))) : 0
 
   let A = chosen.start * hopSec
   const near = beats.reduce((best, t) => (Math.abs(t - A) < Math.abs(best - A) ? t : best), Infinity)
@@ -276,8 +396,9 @@ export function suggestCut(pcm, sampleRate) {
     A,
     B,
     leadInSec: A,
-    hasIntro: A >= INTRO_MIN_SEC,
-    confidence: Math.round(Math.min(1, Math.max(0, chosen.score)) * 1000) / 1000,
+    // A low-confidence A is a guess, so it must not auto-check 有前奏.
+    hasIntro: A >= INTRO_MIN_SEC && confidence >= INTRO_MIN_CONFIDENCE,
+    confidence: Math.round(confidence * 1000) / 1000,
     beats,
   }
 }
