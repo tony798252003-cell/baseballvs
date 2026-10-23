@@ -8,15 +8,18 @@
         </button>
       </div>
 
+      <!-- 聯盟切換 -->
+      <OrgTabs :model-value="selectedOrg" @update:model-value="$emit('update:selectedOrg', $event)" />
+
       <!-- 一軍/二軍切換 -->
       <div class="flex gap-2 mb-3">
-        <button v-for="l in ['一軍', '二軍', 'coach', 'all']" :key="l"
+        <button v-for="l in ['一軍', '二軍', 'coach', 'all', 'departed']" :key="l"
           @click="$emit('update:selectedLeague', l)"
           :class="[
             'px-4 py-1.5 rounded-full font-bold text-sm transition-all duration-150 border cursor-pointer min-h-11',
             selectedLeague === l ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
           ]">
-          {{ l === 'all' ? '全部' : l === 'coach' ? '教練' : l }}
+          {{ l === 'all' ? '全部' : l === 'coach' ? '教練' : l === 'departed' ? '離隊／歷史' : l }}
         </button>
       </div>
 
@@ -28,46 +31,17 @@
         ]">
           全部 ({{ pitchers.length }})
         </button>
-        <!-- 中職六隊 -->
-        <button v-for="team in cpblTeamsWithPitchers" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
+        <button v-for="team in teamsWithPitchers" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
           'px-3 py-3 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-1 cursor-pointer',
           selectedTeam === team ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 scale-105' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
         ]">
-          <img v-if="teamLogos[team]" :src="teamLogos[team]" class="w-16 h-16 object-contain" :alt="team" />
+          <img v-if="teamLogos[team]" :src="teamLogos[team]" class="w-16 h-16 object-contain bg-slate-100" :alt="team" />
           <span class="text-2xl" v-else>⚾</span>
           <div class="text-center">
             <div class="text-xs font-bold">{{ team }}</div>
             <div class="text-xs opacity-75">({{ getTeamPitcherCount(team) }})</div>
           </div>
         </button>
-        <!-- 其他球隊折疊按鈕 -->
-        <button v-if="otherTeamsWithPitchers.length > 0"
-          @click="showOtherTeams = !showOtherTeams"
-          :class="[
-            'px-3 py-3 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-1 cursor-pointer',
-            isOtherTeamSelected ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 scale-105' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
-          ]">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
-          </svg>
-          <div class="text-center">
-            <div class="text-xs font-bold">其他球隊</div>
-            <div class="text-xs opacity-75">{{ showOtherTeams ? '▲ 收折' : '▼ 展開' }}</div>
-          </div>
-        </button>
-        <!-- 展開後的其他球隊 -->
-        <template v-if="showOtherTeams">
-          <button v-for="team in otherTeamsWithPitchers" :key="team" @click="$emit('update:selectedTeam', team)" :class="[
-            'px-3 py-2 rounded-2xl font-bold transition-all duration-150 border shadow-md flex flex-col items-center gap-0.5 cursor-pointer',
-            selectedTeam === team ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 scale-105' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:border-amber-300'
-          ]">
-            <span class="text-lg">⚾</span>
-            <div class="text-center">
-              <div class="text-xs font-bold leading-tight" style="max-width:72px; word-break:break-all">{{ team }}</div>
-              <div class="text-xs opacity-75">({{ getTeamPitcherCount(team) }})</div>
-            </div>
-          </button>
-        </template>
       </div>
 
       <!-- 投手列表 -->
@@ -97,10 +71,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
 import { XCircleIcon } from './Icons.vue';
-
-const CPBL_TEAMS = ['樂天桃猿', '統一獅', '富邦悍將', '味全龍', '台鋼雄鷹', '中信兄弟'];
+import OrgTabs from './OrgTabs.vue';
 
 const props = defineProps({
   show: Boolean,
@@ -114,23 +86,10 @@ const props = defineProps({
   teamLogos: Object,
   selectedTeam: null,
   selectedLeague: String,
+  selectedOrg: String,
   playedPitchers: Set,
   getTeamPitcherCount: Function
 });
 
-defineEmits(['close', 'select', 'update:selectedTeam', 'update:selectedLeague']);
-
-const showOtherTeams = ref(false);
-
-const cpblTeamsWithPitchers = computed(() =>
-  props.teamsWithPitchers.filter(t => CPBL_TEAMS.includes(t))
-);
-
-const otherTeamsWithPitchers = computed(() =>
-  props.teamsWithPitchers.filter(t => !CPBL_TEAMS.includes(t))
-);
-
-const isOtherTeamSelected = computed(() =>
-  props.selectedTeam !== null && !CPBL_TEAMS.includes(props.selectedTeam)
-);
+defineEmits(['close', 'select', 'update:selectedTeam', 'update:selectedLeague', 'update:selectedOrg']);
 </script>

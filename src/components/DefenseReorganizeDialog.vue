@@ -63,13 +63,18 @@
               <span v-if="slots[selectedSlot].hasProblem" class="text-xs text-red-500 font-bold ml-auto">⚠️ 守位不符</span>
             </div>
 
+            <!-- Org filter -->
+            <div class="px-3 pt-2 flex-shrink-0">
+              <OrgTabs v-model="pickerOrg" />
+            </div>
+
             <!-- League filter -->
             <div class="flex gap-1 px-3 pt-2 flex-wrap flex-shrink-0">
-              <button v-for="l in ['一軍', '二軍', 'coach', 'all']" :key="l"
+              <button v-for="l in ['一軍', '二軍', 'coach', 'all', 'departed']" :key="l"
                 @click="pickerLeague = l; pickerTeam = null"
                 :class="['px-3 py-1 rounded-full text-xs font-bold border transition cursor-pointer',
                   pickerLeague === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300']">
-                {{ l === 'all' ? '全部' : l === 'coach' ? '教練' : l }}
+                {{ l === 'all' ? '全部' : l === 'coach' ? '教練' : l === 'departed' ? '離隊／歷史' : l }}
               </button>
             </div>
 
@@ -101,7 +106,7 @@
                 @click="pickerTeam = team"
                 :class="['px-2 py-1 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center gap-1',
                   pickerTeam === team ? 'ring-2 ring-indigo-400 bg-indigo-50 border-indigo-300' : 'bg-white text-slate-600 border-slate-200 hover:bg-indigo-50']">
-                <img v-if="teamLogos?.[team]" :src="teamLogos[team]" class="w-5 h-5 object-contain" />
+                <img v-if="teamLogos?.[team]" :src="teamLogos[team]" class="w-5 h-5 object-contain bg-slate-100" />
                 <span>{{ team }}</span>
               </button>
             </div>
@@ -148,11 +153,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import OrgTabs from './OrgTabs.vue'
+import { filterRosterByLeague, sortTeamsByTeamsOrder } from '../composables/playerFilterLogic.js'
 
 const FIELDING_POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH']
 const PITCHER_POSITIONS = ['SP', 'RP', 'CP', 'P']
-const CPBL_TEAMS = ['樂天桃猿', '統一獅', '富邦悍將', '味全龍', '台鋼雄鷹', '中信兄弟']
 
 const props = defineProps({
   lineup: Array,
@@ -189,8 +195,10 @@ const slots = ref(props.lineup.map((player, idx) => ({
 })))
 
 const selectedSlot = ref(-1)
+const pickerOrg = ref('CPBL')
 const pickerLeague = ref('一軍')
 const pickerTeam = ref(null)
+watch(pickerOrg, () => { pickerTeam.value = null })
 const pickerPositionFilter = ref(null)
 
 // === 選擇棒次 ===
@@ -217,24 +225,19 @@ const allAvailablePlayers = computed(() => {
   })
 })
 
+// 目前聯盟／分類下的球員
+const leaguePlayers = computed(() =>
+  filterRosterByLeague(allAvailablePlayers.value, pickerOrg.value, pickerLeague.value)
+)
+
 // 可用球隊清單
-const availableTeams = computed(() => {
-  const teams = new Set(allAvailablePlayers.value.map(p => p.team).filter(Boolean))
-  return [
-    ...CPBL_TEAMS.filter(t => teams.has(t)),
-    ...[...teams].filter(t => !CPBL_TEAMS.includes(t))
-  ]
-})
+const availableTeams = computed(() =>
+  sortTeamsByTeamsOrder(new Set(leaguePlayers.value.map(p => p.team)))
+)
 
 // 篩選後的球員清單
 const filteredPickerPlayers = computed(() => {
-  let players = allAvailablePlayers.value
-
-  if (pickerLeague.value === 'coach') {
-    players = players.filter(p => p.isCoach)
-  } else if (pickerLeague.value !== 'all') {
-    players = players.filter(p => !p.isCoach && p.league === pickerLeague.value)
-  }
+  let players = leaguePlayers.value
 
   if (pickerTeam.value) {
     players = players.filter(p => p.team === pickerTeam.value)

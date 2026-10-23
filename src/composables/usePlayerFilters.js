@@ -1,19 +1,21 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { orgOfTeam } from '../constants/teams.js'
+import { filterRosterByLeague, sortTeamsByTeamsOrder } from './playerFilterLogic.js'
 
 // 球員過濾和計算 composable
 export function usePlayerFilters(roster, selectedTeam) {
-  const selectedLeague = ref('一軍') // '一軍' | '二軍' | 'all' | 'coach'
-  // 球隊列表
+  const selectedOrg = ref('CPBL') // 'CPBL' | 'NPB' | 'MLB'
+  const selectedLeague = ref('一軍') // '一軍' | '二軍' | 'coach' | 'all' | 'departed'
+
+  // 換聯盟時清掉已選球隊（舊球隊不屬於新聯盟）
+  watch(selectedOrg, () => { selectedTeam.value = null })
+
+  // 球隊列表：僅限目前聯盟，依 TEAMS 順序
   const teams = computed(() => {
     const teamSet = new Set(roster.value.map(p => p.team))
-    const teamArray = Array.from(teamSet).sort()
-    // 將「其他球隊」移到最後
-    const otherIndex = teamArray.indexOf('其他球隊')
-    if (otherIndex > -1) {
-      teamArray.splice(otherIndex, 1)
-      teamArray.push('其他球隊')
-    }
-    return teamArray
+    return sortTeamsByTeamsOrder(
+      [...teamSet].filter(t => orgOfTeam(t) === selectedOrg.value)
+    )
   })
 
   // 判斷是否為投手守位的輔助函數
@@ -35,12 +37,10 @@ export function usePlayerFilters(roster, selectedTeam) {
     return false
   }
 
-  // 依 league 過濾的基礎名單
-  const leagueRoster = computed(() => {
-    if (selectedLeague.value === 'coach') return roster.value.filter(p => p.isCoach)
-    if (selectedLeague.value === 'all') return roster.value
-    return roster.value.filter(p => !p.isCoach && p.league === selectedLeague.value)
-  })
+  // 依聯盟與 league／離隊分類過濾的基礎名單
+  const leagueRoster = computed(() =>
+    filterRosterByLeague(roster.value, selectedOrg.value, selectedLeague.value)
+  )
 
   // 打者：主要守位不是純投手的球員都可以打擊
   const batters = computed(() =>
@@ -92,5 +92,6 @@ export function usePlayerFilters(roster, selectedTeam) {
     getTeamBatterCount,
     getTeamPitcherCount,
     selectedLeague,
+    selectedOrg,
   }
 }

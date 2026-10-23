@@ -48,9 +48,11 @@
       :replacing-index="replacingIndex"
       :is-selecting-away-team="isSelectingAwayTeam"
       :selected-league="selectedLeague"
+      :selected-org="selectedOrg"
       @back="mode = 'menu'"
       @update:selected-team="selectedTeam = $event"
       @update:selected-league="selectedLeague = $event"
+      @update:selected-org="selectedOrg = $event"
       @add-player="addToLineup"
       @replace-player="replaceLineupPlayer"
       @remove-player="removeFromLineup"
@@ -124,6 +126,7 @@
       :team-logos="teamLogos"
       :selected-team="selectedTeam"
       :selected-league="selectedLeague"
+      :selected-org="selectedOrg"
       :played-batters="playedBatters"
       :lineup="lineup"
       :current-batter-index="currentBatterIndex"
@@ -131,6 +134,7 @@
       @select="substituteBatter($event)"
       @update:selected-team="selectedTeam = $event"
       @update:selected-league="selectedLeague = $event"
+      @update:selected-org="selectedOrg = $event"
     />
 
     <!-- 進階模式守備重組對話框 -->
@@ -155,12 +159,14 @@
       :team-logos="teamLogos"
       :selected-team="selectedTeam"
       :selected-league="selectedLeague"
+      :selected-org="selectedOrg"
       :played-pitchers="playedPitchers"
       :get-team-pitcher-count="getTeamPitcherCount"
       @close="showPitcherSelect = false"
       @select="substitutePitcher($event)"
       @update:selected-team="selectedTeam = $event"
       @update:selected-league="selectedLeague = $event"
+      @update:selected-org="selectedOrg = $event"
     />
   </div>
 </template>
@@ -284,6 +290,7 @@ const {
   getTeamBatterCount,
   getTeamPitcherCount,
   selectedLeague,
+  selectedOrg,
 } = usePlayerFilters(roster, selectedTeam)
 
 // 使用當前隊伍 composable

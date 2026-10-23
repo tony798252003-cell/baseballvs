@@ -115,18 +115,11 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { supabase } from '../lib/supabase.js'
+import { CPBL_TEAMS, TEAMS } from '../constants/teams.js'
 
 const emit = defineEmits(['back'])
 
-const CPBL_TEAMS = ['樂天桃猿', '統一獅', '富邦悍將', '味全龍', '台鋼雄鷹', '中信兄弟']
-const teamLogos = {
-  '樂天桃猿': '/logos/rakuten.png',
-  '統一獅': '/logos/lions.png',
-  '富邦悍將': '/logos/fubon.png',
-  '味全龍': '/logos/dragons.png',
-  '台鋼雄鷹': '/logos/hawks.png',
-  '中信兄弟': '/logos/brothers.png',
-}
+const teamLogos = Object.fromEntries(TEAMS.filter(t => t.logo).map(t => [t.name, t.logo]))
 
 const allPlayers = ref([])
 const selectedTeam = ref(null)
