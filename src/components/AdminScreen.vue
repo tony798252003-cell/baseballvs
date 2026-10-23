@@ -1,12 +1,16 @@
 <template>
-  <div class="w-full h-full bg-slate-900 text-white flex flex-col overflow-hidden">
+  <AdminLogin v-if="session === null" @back="emit('back')" />
+  <div v-else-if="session" class="w-full h-full bg-slate-900 text-white flex flex-col overflow-hidden">
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 bg-slate-800 border-b border-slate-700 flex-shrink-0">
       <div class="flex items-center gap-3">
         <button @click="$emit('back')" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm transition">← 返回</button>
         <h1 class="text-xl font-bold">⚙️ 球員資料設定</h1>
       </div>
-      <div class="text-slate-400 text-sm">未設定音樂：{{ unmappedPlayers.length }} 人</div>
+      <div class="flex items-center gap-4">
+        <div class="text-slate-400 text-sm">未設定音樂：{{ unmappedPlayers.length }} 人</div>
+        <button @click="logout" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm transition">登出</button>
+      </div>
     </div>
 
     <!-- Tabs -->
@@ -375,8 +379,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { supabase } from '../lib/supabase.js'
+import AdminLogin from './AdminLogin.vue'
 
 const emit = defineEmits(['back'])
 
@@ -389,6 +394,7 @@ const activeTab = ref('all')
 const searchQuery = ref('')
 const filterTeam = ref('')
 const toast = ref(null)
+const session = ref(undefined) // undefined = 檢查中, null = 未登入
 const saving = ref(false)
 
 // 資料
@@ -495,9 +501,9 @@ async function saveEdit() {
     emoji: editForm.value.emoji || null,
     intro: editForm.value.intro || null,
   }
-  const { error } = await supabase.from('players').update(update).eq('id', editingPlayer.value.id)
+  const { data, error } = await supabase.from('players').update(update).eq('id', editingPlayer.value.id).select('id')
   saving.value = false
-  if (error) { showToast('❌ 儲存失敗'); return }
+  if (error || !data?.length) { showToast('❌ 儲存失敗'); return }
   Object.assign(editingPlayer.value, update)
   if (editingPlayer.value?.id) {
     musicStatusMap.value[editingPlayer.value.id] = update.song ? 'pending' : 'no_song'
@@ -512,9 +518,9 @@ function confirmDelete() {
 
 async function deletePlayer() {
   saving.value = true
-  const { error } = await supabase.from('players').delete().eq('id', deletingPlayer.value.id)
+  const { data, error } = await supabase.from('players').delete().eq('id', deletingPlayer.value.id).select('id')
   saving.value = false
-  if (error) { showToast('❌ 刪除失敗'); return }
+  if (error || !data?.length) { showToast('❌ 刪除失敗'); return }
   dbPlayers.value = dbPlayers.value.filter(p => p.id !== deletingPlayer.value.id)
   deletingPlayer.value = null
   editingPlayer.value = null
@@ -654,7 +660,9 @@ async function confirmDropboxAdd() {
     dropboxUnparsed.value = []
   }
 
-  if (failed > 0) {
+  if (added === 0 && failed > 0) {
+    showToast(`❌ 新增失敗（${failed} 筆）`)
+  } else if (failed > 0) {
     showToast(`✅ 已新增 ${added} 首（⚠ ${failed} 筆失敗）`)
   } else {
     showToast(`✅ 已新增 ${added} 首應援曲`)
@@ -770,8 +778,8 @@ async function confirmPlayerDropboxImport() {
         url = url.includes('?dl=0') ? url.replace('?dl=0', '?raw=1') : url + (url.includes('?') ? '&raw=1' : '?raw=1')
 
         const field = item.kind === 'intro' ? 'intro' : 'song'
-        const { error } = await supabase.from('players').update({ [field]: url }).eq('id', item.playerId)
-        if (error) { console.error(`[Player Dropbox Sync] update failed for "${item.team} - ${item.name}":`, error); failed++; continue }
+        const { data: updated, error } = await supabase.from('players').update({ [field]: url }).eq('id', item.playerId).select('id')
+        if (error || !updated?.length) { console.error(`[Player Dropbox Sync] update failed for "${item.team} - ${item.name}":`, error); failed++; continue }
 
         const idx = dbPlayers.value.findIndex(p => p.id === item.playerId)
         if (idx >= 0) dbPlayers.value[idx][field] = url
@@ -788,7 +796,9 @@ async function confirmPlayerDropboxImport() {
     playerDropboxUnparsed.value = []
   }
 
-  if (failed > 0) {
+  if (added === 0 && failed > 0) {
+    showToast(`❌ 匯入失敗（${failed} 筆）`)
+  } else if (failed > 0) {
     showToast(`✅ 已匯入 ${added} 首（⚠ ${failed} 筆失敗）`)
   } else {
     showToast(`✅ 已匯入 ${added} 首應援歌`)
@@ -807,8 +817,8 @@ async function addChant() {
 }
 
 async function deleteChant(c) {
-  const { error } = await supabase.from('team_chants').delete().eq('id', c.id)
-  if (error) { showToast('❌ 刪除失敗'); return }
+  const { data, error } = await supabase.from('team_chants').delete().eq('id', c.id).select('id')
+  if (error || !data?.length) { showToast('❌ 刪除失敗'); return }
   teamChantsData.value = teamChantsData.value.filter(x => x.id !== c.id)
   showToast('🗑️ 已刪除')
 }
@@ -873,5 +883,18 @@ function showToast(msg) {
   setTimeout(() => toast.value = null, 3000)
 }
 
-onMounted(loadData)
+async function logout() {
+  await supabase.auth.signOut()
+}
+
+let authSub = null
+onMounted(async () => {
+  const { data } = await supabase.auth.getSession()
+  session.value = data.session
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => { session.value = s })
+  authSub = sub.subscription
+})
+onUnmounted(() => authSub?.unsubscribe())
+
+watch(session, (s) => { if (s) loadData() })
 </script>
