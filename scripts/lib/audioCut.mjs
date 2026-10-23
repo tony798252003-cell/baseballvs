@@ -120,18 +120,26 @@ export function buildRenderArgs({ src, out, start, end, fadeInMs = 0, fadeOutMs 
   ]
 }
 
-// Renders, then verifies the encoded file's true peak; lowers the limiter ceiling by the overshoot and retries.
-export async function renderCut(opts) {
+// Renders every cut at ONE shared limiter ceiling, then verifies each file's true peak; if any is over,
+// lowers the shared ceiling by the worst overshoot and re-renders all of them. Returns the final ceiling.
+async function renderWithSharedCeiling(cuts) {
   let ceilingDb = LIMITER_CEILING_DB
   for (let attempt = 1; ; attempt++) {
-    await runFfmpeg(buildRenderArgs({ ...opts, ceilingDb }))
-    const { truePeakDb } = await measureLoudness(opts.out)
-    if (truePeakDb <= TRUE_PEAK_MAX_DB) return
-    if (attempt === MAX_RENDER_ATTEMPTS) {
-      throw new Error(`true peak ${truePeakDb} dBTP still above ${TRUE_PEAK_MAX_DB} after ${attempt} renders of ${opts.out}`)
+    let worst = -Infinity
+    for (const opts of cuts) {
+      await runFfmpeg(buildRenderArgs({ ...opts, ceilingDb }))
+      worst = Math.max(worst, (await measureLoudness(opts.out)).truePeakDb)
     }
-    ceilingDb -= truePeakDb - TRUE_PEAK_MAX_DB + CEILING_RETRY_MARGIN_DB
+    if (worst <= TRUE_PEAK_MAX_DB) return ceilingDb
+    if (attempt === MAX_RENDER_ATTEMPTS) {
+      throw new Error(`true peak ${worst} dBTP still above ${TRUE_PEAK_MAX_DB} after ${attempt} renders of ${cuts.map((c) => c.out).join(', ')}`)
+    }
+    ceilingDb -= worst - TRUE_PEAK_MAX_DB + CEILING_RETRY_MARGIN_DB
   }
+}
+
+export async function renderCut(opts) {
+  await renderWithSharedCeiling([opts])
 }
 
 // Decoded length as a decoder sees it (encoder delay/padding removed when the LAME header is honoured).
@@ -150,18 +158,17 @@ export async function decodePcm(file, sampleRate = 11025) {
 }
 
 /**
- * song = A→B with fade in + fade out; intro = 0→B with fade out only. Same gain for both.
+ * song = A→B with fade in + fade out; intro = 0→B with fade out only. Same gain and the same limiter
+ * ceiling for both (no level step at the intro→song seam); the shared ceiling is returned as ceilingDb.
  * Writes fixed names (song.mp3 / intro.mp3) into outDir, so each call needs its own outDir
  * or it overwrites the previous pair.
  */
 export async function renderPair({ src, outDir, A, B, fadeMs, gainDb, withIntro }) {
   mkdirSync(outDir, { recursive: true })
   const songPath = join(outDir, 'song.mp3')
-  await renderCut({ src, out: songPath, start: A, end: B, fadeInMs: fadeMs, fadeOutMs: fadeMs, gainDb })
-  let introPath = null
-  if (withIntro) {
-    introPath = join(outDir, 'intro.mp3')
-    await renderCut({ src, out: introPath, start: 0, end: B, fadeInMs: 0, fadeOutMs: fadeMs, gainDb })
-  }
-  return { songPath, introPath }
+  const introPath = withIntro ? join(outDir, 'intro.mp3') : null
+  const cuts = [{ src, out: songPath, start: A, end: B, fadeInMs: fadeMs, fadeOutMs: fadeMs, gainDb }]
+  if (introPath) cuts.push({ src, out: introPath, start: 0, end: B, fadeInMs: 0, fadeOutMs: fadeMs, gainDb })
+  const ceilingDb = await renderWithSharedCeiling(cuts)
+  return { songPath, introPath, ceilingDb }
 }

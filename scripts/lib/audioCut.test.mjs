@@ -165,6 +165,24 @@ test('integration: rendered song/intro decode to exact cut lengths and peaks sta
     })
   }
 
+  // Intro plays straight into the song: if only the intro got a lower limiter ceiling the seam would jump in level.
+  await t.test('renderPair limits intro and song with one shared ceiling when only the intro is hot', async () => {
+    const hot = join(dir, 'hot-intro.wav')
+    // 0-4 s full-scale random square noise (pre-A), then a moderate 440 Hz tone.
+    const r = spawnSync(findBinary('ffmpeg'), ['-hide_banner', '-y', '-f', 'lavfi', '-i',
+      'aevalsrc=if(lt(t\\,4)\\,sgn(random(0)-0.5)\\,0.3*sin(2*PI*440*t)):s=44100:d=30', '-ac', '2', '-c:a', 'pcm_s16le', hot])
+    assert.equal(r.status, 0, r.stderr?.toString())
+    const songOnly = await renderPair({ src: hot, outDir: join(dir, 'hot-song'), A: 4, B: 20, fadeMs: 100, gainDb: 6, withIntro: false })
+    const pair = await renderPair({ src: hot, outDir: join(dir, 'hot-pair'), A: 4, B: 20, fadeMs: 100, gainDb: 6, withIntro: true })
+    // The song alone never needs a retry; with the hot intro the shared ceiling must drop for both files.
+    assert.equal(songOnly.ceilingDb, -2)
+    assert.ok(pair.ceilingDb < -2, `pair ceiling ${pair.ceilingDb}`)
+    for (const f of [pair.songPath, pair.introPath]) {
+      const { truePeakDb } = await measureLoudness(f)
+      assert.ok(truePeakDb <= -1.0 + 0.2, `${f} true peak ${truePeakDb}`)
+    }
+  })
+
   // Whole-file re-encode of an existing song must keep its length (no added delay/padding).
   await t.test('whole-file re-encode keeps duration', async () => {
     const out = join(dir, 'whole.mp3')
