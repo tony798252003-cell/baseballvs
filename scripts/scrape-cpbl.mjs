@@ -1,8 +1,6 @@
 import { parse } from 'node-html-parser'
-import { createClient } from '@supabase/supabase-js'
+import { loadEnv, createServiceClient } from './lib/env.mjs'
 
-const SUPABASE_URL = 'https://ehevruywqvpdbzveqxum.supabase.co'
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoZXZydXl3cXZwZGJ6dmVxeHVtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzcxNjcxMiwiZXhwIjoyMDg5MjkyNzEyfQ.KoZ4QUoftI0fjHydy8POsyccPZg0-AG8-WQ1HgZ5nug'
 const BASE_URL = 'https://www.cpbl.com.tw'
 
 const TEAMS = [
@@ -40,7 +38,8 @@ const POSITION_EN_MAP = {
   '指定打擊': 'DH',
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+loadEnv()
+const supabase = createServiceClient()
 
 async function fetchTeamPlayers(teamCode, teamName, league = '一軍') {
   const kindCode = league === '二軍' ? 'D' : 'A'

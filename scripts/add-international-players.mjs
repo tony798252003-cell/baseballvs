@@ -1,9 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
+import { loadEnv, createServiceClient } from './lib/env.mjs'
 
-const SUPABASE_URL = 'https://ehevruywqvpdbzveqxum.supabase.co'
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoZXZydXl3cXZwZGJ6dmVxeHVtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzcxNjcxMiwiZXhwIjoyMDg5MjkyNzEyfQ.KoZ4QUoftI0fjHydy8POsyccPZg0-AG8-WQ1HgZ5nug'
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+loadEnv()
+const supabase = createServiceClient()
 
 function mlbPhotoUrl(mlbId) {
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${mlbId}/headshot/67/current`

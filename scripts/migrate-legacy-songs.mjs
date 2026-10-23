@@ -1,17 +1,13 @@
 #!/usr/bin/env node
 // scripts/migrate-legacy-songs.mjs
-import { createClient } from '@supabase/supabase-js'
+import { loadEnv, createServiceClient } from './lib/env.mjs'
 import { createInterface } from 'node:readline/promises'
 import {
-  SUPABASE_URL, SUPABASE_KEY, TEAM_FOLDER_MAP,
+  TEAM_FOLDER_MAP,
   fuzzyNameMatch, parseLegacyFilename, listDropboxFolder, moveDropboxFile, getSharedLinkRawUrl,
 } from './lib/dropboxMusicSync.mjs'
 
-try {
-  process.loadEnvFile('.env')
-} catch {
-  // optional
-}
+loadEnv()
 
 const DROPBOX_TOKEN = process.env.DROPBOX_TOKEN
 if (!DROPBOX_TOKEN) {
@@ -19,7 +15,7 @@ if (!DROPBOX_TOKEN) {
   process.exit(1)
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+const supabase = createServiceClient()
 const rl = createInterface({ input: process.stdin, output: process.stdout })
 
 function matchPlayer(entry, teamPlayers, allPlayers) {

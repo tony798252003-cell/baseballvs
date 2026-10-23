@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 // scripts/add-player-song.mjs
-import { createClient } from '@supabase/supabase-js'
+import { loadEnv, createServiceClient } from './lib/env.mjs'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
-import { SUPABASE_URL, SUPABASE_KEY, uploadToDropbox, getSharedLinkRawUrl } from './lib/dropboxMusicSync.mjs'
+import { uploadToDropbox, getSharedLinkRawUrl } from './lib/dropboxMusicSync.mjs'
 
-try {
-  process.loadEnvFile('.env')
-} catch {
-  // .env is optional; DROPBOX_TOKEN may already be in the environment
-}
+loadEnv()
 
 const DROPBOX_TOKEN = process.env.DROPBOX_TOKEN
 if (!DROPBOX_TOKEN) {
@@ -29,7 +25,7 @@ function checkFfmpeg() {
   }
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+const supabase = createServiceClient()
 const rl = createInterface({ input: process.stdin, output: process.stdout })
 
 async function ask(question) {
