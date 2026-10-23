@@ -5,7 +5,7 @@ import { accessSync, constants, mkdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, delimiter } from 'node:path'
 
-export const TARGET_LUFS = -14
+export const TARGET_LUFS = -12
 // Requirement: true peak <= -1 dBTP. The limiter runs 4x oversampled and aims lower to absorb
 // resampling and mp3 encoder overshoot. -2 dB covers HF square waves and pink noise; pathological
 // wideband material (clipped white noise) overshoots ~2.5 dB in the encoder, so renderCut measures

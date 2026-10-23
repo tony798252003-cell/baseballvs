@@ -11,7 +11,7 @@ const ZOOM_SEC = 1.5
 const DRAG_START_PX = 3
 
 const ctx = new (window.AudioContext || window.webkitAudioContext)()
-let targetLufs = -14
+let targetLufs = -12
 let latest = null // last /api/state
 const views = new Map() // playerId -> view
 const buffers = new Map() // media path -> Promise<{ buf, env }>

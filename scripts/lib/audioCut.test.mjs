@@ -40,9 +40,9 @@ test('parseEbur128 throws when the summary is missing', () => {
 
 // Gain brings the whole original to target, then the per-card slider nudges it.
 test('computeGainDb = target - integrated + slider', () => {
-  assert.equal(TARGET_LUFS, -14)
-  assert.equal(computeGainDb({ integratedLufs: -20, sliderDb: 2 }), 8)
-  assert.equal(computeGainDb({ integratedLufs: -10 }), -4)
+  assert.equal(TARGET_LUFS, -12)
+  assert.equal(computeGainDb({ integratedLufs: -20, sliderDb: 2 }), 10)
+  assert.equal(computeGainDb({ integratedLufs: -10 }), -2)
 })
 
 // A near-silent source must not be boosted by 50+ dB (noise floor blown up into the limiter).

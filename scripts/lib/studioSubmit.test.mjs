@@ -39,7 +39,7 @@ test('happy path renders with the card cut and gain, names files from the DB row
 
   assert.deepEqual(summary, { uploaded: ['樂天桃猿 - 球員1'], skipped: [], failed: [] })
   assert.deepEqual(calls.render, [{
-    src: '/studio/b/orig/1-v.mp3', outDir: '/studio/b/render/1', A: 5, B: 20, fadeMs: 60, gainDb: -14 - -10 + 2, withIntro: true,
+    src: '/studio/b/orig/1-v.mp3', outDir: '/studio/b/render/1', A: 5, B: 20, fadeMs: 60, gainDb: -12 - -10 + 2, withIntro: true,
   }])
   assert.deepEqual(calls.upload.map(([, r]) => r), ['/Music/Players/樂天桃猿 - 球員1.mp3', '/Music/Players/樂天桃猿 - 球員1 - Intro.mp3'])
   const song = `https://dl/${encodeURIComponent('/Music/Players/樂天桃猿 - 球員1.mp3')}?raw=1`
