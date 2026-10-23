@@ -1,5 +1,5 @@
 // 應援曲工作台：本機伺服器（只綁 127.0.0.1）。讀資料庫找缺歌球員 → 搜尋 YouTube → 下載 → 建議切點，
-// 卡片頁在 scripts/chant-studio/。本程式不寫資料庫、不寫 Dropbox（送出由 POST /api/submit 處理）。
+// 卡片頁在 scripts/chant-studio/。只有 POST /api/submit（頁面上的「📤 送出」）會上傳 Dropbox 並寫入 players.song／intro。
 //
 // node scripts/chant-studio.mjs --team 樂天桃猿 [--team …] [--league 一軍] [--org CPBL] [--include-pitchers]
 //   [--batch name] [--port 8777] [--cookies-from-browser chrome] [--no-open]
@@ -12,9 +12,11 @@ import { parseArgs } from 'node:util'
 import { createServiceClient, loadEnv } from './lib/env.mjs'
 import { fetchAllPages } from '../src/lib/fetchAllPages.js'
 import { searchPlayer } from './lib/youtubeSearch.mjs'
-import { TARGET_LUFS, computeGainDb, decodeDurationSec, decodePcm, findBinary, measureLoudness } from './lib/audioCut.mjs'
+import { TARGET_LUFS, computeGainDb, decodeDurationSec, decodePcm, findBinary, measureLoudness, renderPair } from './lib/audioCut.mjs'
+import { getDropboxAccessToken, getSharedLinkRawUrl, uploadToDropbox } from './lib/dropboxMusicSync.mjs'
 import { suggestCut } from './lib/cutSuggest.mjs'
 import { STUDIO_DIR, batchName, loadState, mergePlayers, saveState } from './lib/studioState.mjs'
+import { submitApproved } from './lib/studioSubmit.mjs'
 import {
   applyCardEdit, checkRequest, chooseNextCandidate, mediaPath, nextCardId, retryCard, runPipeline, safeJoin, selectPlayers,
   useCustomUrl,
@@ -135,6 +137,36 @@ function kick() {
     })
 }
 
+// ---- 送出（一次只跑一個）：重新讀資料庫 → 產生成品 → 上傳 Dropbox → 只寫 song／intro ----
+let submitting = null // null | { current: cardId | null }
+async function readPlayer(id) {
+  const { data, error } = await supabase.from('players').select('id, name, team, song, intro').eq('id', id).maybeSingle()
+  if (error) throw new Error(`讀取球員失敗：${error.message}`)
+  return data
+}
+async function writePlayer(id, patch) {
+  const { error } = await supabase.from('players').update(patch).eq('id', id)
+  if (error) throw new Error(`寫入資料庫失敗：${error.message}`)
+}
+async function submit() {
+  submitting = { current: null }
+  try {
+    const summary = await submitApproved(state, {
+      readPlayer,
+      writePlayer,
+      render: renderPair,
+      upload: async (local, remote) => uploadToDropbox(await getDropboxAccessToken(), local, remote),
+      link: async (remote) => getSharedLinkRawUrl(await getDropboxAccessToken(), remote),
+      save,
+      log: (msg) => console.log(msg),
+    }, { busyId: processing, onStart: (id) => { submitting.current = id } })
+    console.log(`送出完成：上傳 ${summary.uploaded.length}、跳過 ${summary.skipped.length}、失敗 ${summary.failed.length}`)
+    return summary
+  } finally {
+    submitting = null
+  }
+}
+
 // ---- HTTP ----
 const sendJson = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': MIME['.json'] })
@@ -187,7 +219,11 @@ async function handle(req, res) {
 
   if (req.method === 'GET' && path === '/api/state') return sendJson(res, 200, apiState())
   if (req.method === 'GET' && path.startsWith('/media/')) return sendFile(res, mediaPath(STUDIO_DIR, batch, path.slice('/media/'.length)))
-  if (req.method === 'POST' && path === '/api/submit') return sendJson(res, 501, { error: 'not implemented' })
+  if (req.method === 'POST' && path === '/api/submit') {
+    await readJson(req)
+    if (submitting) return sendJson(res, 409, { error: '送出進行中，請稍候' })
+    return sendJson(res, 200, await submit())
+  }
 
   const m = /^\/api\/cards\/([^/]+)(?:\/(next|url|retry))?$/.exec(path)
   if (req.method === 'POST' && m) {
@@ -195,7 +231,7 @@ async function handle(req, res) {
     if (!card) return sendJson(res, 404, { error: '找不到這張卡片' })
     const body = await readJson(req)
     // Checked after the body is read so the check and the mutation below run without an await in between.
-    if (processing === m[1]) return sendJson(res, 409, { error: '這張卡片正在處理中，請稍候' })
+    if (processing === m[1] || submitting?.current === m[1]) return sendJson(res, 409, { error: '這張卡片正在處理中，請稍候' })
     const error = m[2] ? CARD_ACTIONS[m[2]](card, body) : applyCardEdit(card, body)
     if (error) return sendJson(res, 400, { error })
     save(state)
