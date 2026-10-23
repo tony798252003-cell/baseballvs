@@ -103,6 +103,42 @@ export function pathConflicts(resolved) {
   return new Set([...byPath.values()].filter((keys) => keys.size > 1).flatMap((keys) => [...keys]))
 }
 
+// Files whose Dropbox path --apply must look up: every referenced file in the DB, not just the selected
+// or planned ones, so conflict detection sees links that are skipped or out of scope.
+export function lookupTargets(allRefs) {
+  const out = new Map()
+  for (const r of allRefs) {
+    const key = linkKey(r.url)
+    if (!out.has(key)) out.set(key, r.url)
+  }
+  return out
+}
+
+/**
+ * actions: the selected, planned actions; lookups: Map key -> { path } | { unresolvable } | { error } for
+ * every lookupTargets key. Any { error } (rate limit after retries, 5xx, network) means the conflict check
+ * is incomplete, so --apply must abort: returned in abort. A selected file that is unresolvable or whose
+ * path is behind another link fails (failures: key -> reason). Unresolvable unselected files are listed
+ * in ignored (dead links cannot collide with a path we upload to).
+ */
+export function evaluateLookups(actions, lookups) {
+  const selected = new Set(actions.map((a) => a.key))
+  const abort = []
+  const ignored = []
+  const failures = new Map()
+  for (const [key, r] of lookups) {
+    if (r.error) abort.push(`${key}: ${r.error}`)
+    else if (r.unresolvable) (selected.has(key) ? failures.set(key, r.unresolvable) : ignored.push({ key, reason: r.unresolvable }))
+  }
+  for (const key of selected) if (!lookups.has(key)) abort.push(`${key}: 未查詢路徑`)
+  const resolved = [...lookups].filter(([, r]) => r.path).map(([key, r]) => ({ key, path: r.path }))
+  const pathOf = new Map(resolved.map((r) => [r.key, r.path]))
+  for (const key of pathConflicts(resolved)) {
+    if (selected.has(key)) failures.set(key, `Dropbox 路徑 ${pathOf.get(key)} 被多個不同連結引用`)
+  }
+  return { abort, failures, ignored, pathOf }
+}
+
 const unitOf = (r) => (r.kind === 'song' || r.kind === 'intro' ? `p:${r.ownerId}` : `f:${linkKey(r.url)}`)
 
 /**
@@ -142,6 +178,12 @@ export function selectRefs(refs, { only, limit } = {}) {
     }
   }
   return refs.filter((r) => keys.has(linkKey(r.url)))
+}
+
+// Ledger entries written before the two-phase ledger have no state; they were only written after a
+// full apply, so they count as 'done'. 'uploaded' means interrupted between upload and DB update.
+export function ledgerStateOf(entry) {
+  return entry ? entry.state ?? 'done' : undefined
 }
 
 export function median(values) {

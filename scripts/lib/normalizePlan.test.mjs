@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   planNormalization, fileActions, renderGroups, pathConflicts, selectRefs, linkKey, median, toSharedLinkUrl, backupFileName,
+  lookupTargets, evaluateLookups, ledgerStateOf,
 } from './normalizePlan.mjs'
 
 const T = -14
@@ -127,14 +128,47 @@ test('two links resolving to the same Dropbox path are both flagged', () => {
   assert.deepEqual([...conflicts].sort(), ['a', 'b'])
 })
 
-test('a planned file sharing its Dropbox path with a skipped file is blocked too', () => {
-  // Uploading the planned one would silently re-encode what the skipped link plays as well.
-  const acts = fileActions([
-    { kind: 'song', ownerId: 1, url: L('ok'), gainDb: 1 },
-    { kind: 'chant', ownerId: 'c', url: L('bad'), gainDb: null, skipped: '增益不一致' },
-  ])
-  const conflicts = pathConflicts(acts.map((a) => ({ key: a.key, path: '/music/same.mp3' })))
-  assert.ok(conflicts.has(linkKey(L('ok'))))
+test('apply looks up skipped and out-of-scope files too, and blocks a selected file sharing their path', () => {
+  // Reverting to looking up only the planned/selected actions would miss these collisions.
+  const allRefs = [
+    { kind: 'song', ownerId: 1, url: L('ok') },
+    { kind: 'chant', ownerId: 'c', url: L('bad') },
+    { kind: 'song', ownerId: 9, url: L('other') },
+    { kind: 'song', ownerId: 8, url: L('free') },
+  ]
+  const selected = selectRefs(allRefs, { only: '1' })
+  const lufs = { ok: -10, bad: -10, other: -10, free: -10 }
+  const plan = planNormalization([...selected, allRefs[1]].map((r) => ({ ...r, lufs: lufs[r.url.split('/')[5]] })), T)
+  plan[1] = { ...plan[1], gainDb: null, skipped: '增益不一致' }
+  const actions = fileActions(plan).filter((a) => !a.skipped)
+  assert.deepEqual(actions.map((a) => a.key), [linkKey(L('ok'))])
+
+  const targets = lookupTargets(allRefs)
+  assert.deepEqual([...targets.keys()], allRefs.map((r) => linkKey(r.url)))
+
+  const pathFor = { ok: '/music/same.mp3', bad: '/music/same.mp3', other: '/music/other.mp3', free: '/music/free.mp3' }
+  const lookups = new Map([...targets].map(([key, url]) => [key, { path: pathFor[url.split('/')[5]] }]))
+  const { abort, failures } = evaluateLookups(actions, lookups)
+  assert.deepEqual(abort, [])
+  assert.match(failures.get(linkKey(L('ok'))), /多個不同連結/)
+
+  const sameAsUnselected = new Map(lookups)
+  sameAsUnselected.set(linkKey(L('bad')), { path: '/music/bad.mp3' })
+  sameAsUnselected.set(linkKey(L('other')), { path: '/music/same.mp3' })
+  assert.ok(evaluateLookups(actions, sameAsUnselected).failures.has(linkKey(L('ok'))))
+})
+
+test('a selected file missing from the lookups aborts instead of uploading unchecked', () => {
+  // Guards against a call site that forgets to look up the selected files themselves.
+  const { abort } = evaluateLookups([{ key: 'k' }], new Map())
+  assert.equal(abort.length, 1)
+})
+
+test('a selected dead link fails that file but does not abort the run', () => {
+  // A dead selected link cannot be uploaded to; other files are still safe to process.
+  const { abort, failures } = evaluateLookups([{ key: 'k' }], new Map([['k', { unresolvable: '分享連結已失效 404' }]]))
+  assert.deepEqual(abort, [])
+  assert.match(failures.get('k'), /失效/)
 })
 
 const refs = [
@@ -187,6 +221,13 @@ test('selection closes transitively over shared files and player pairs', () => {
     { kind: 'song', ownerId: 3, url: L('s3') },
   ]
   assert.deepEqual(selectRefs(all, { only: L('x') }).map((r) => r.url), [L('x'), L('x'), L('i2')])
+})
+
+test('a ledger entry without state counts as done; uploaded stays needs-human', () => {
+  // Dry run and --apply must agree, or a legacy entry would be shown as pending but skipped on apply.
+  assert.equal(ledgerStateOf({ key: 'k' }), 'done')
+  assert.equal(ledgerStateOf({ key: 'k', state: 'uploaded' }), 'uploaded')
+  assert.equal(ledgerStateOf(undefined), undefined)
 })
 
 test('median of song LUFS ignores unmeasurable values and averages the middle pair', () => {
