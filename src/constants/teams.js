@@ -7,7 +7,7 @@ export const ORGS = [
 ]
 
 const cpbl = (name, logo, cpblClubNo) => ({ name, org: 'CPBL', logo, cpblClubNo })
-const npb = (name, npbCode, en) => ({ name, org: 'NPB', logo: `/logos/npb-${en}.png`, npbCode })
+const npb = (name, yahooTeamId, en) => ({ name, org: 'NPB', logo: `/logos/npb-${en}.png`, yahooTeamId })
 const mlb = (name, aliases) => ({ name, org: 'MLB', ...(aliases && { aliases }) })
 // 已解散／改名球隊：保留當時隊名；同一球團改名者以 successor 指向現役球隊
 const defunct = (name, successor) => ({ name, org: 'CPBL', defunct: true, ...(successor && { successor }) })
@@ -38,19 +38,19 @@ export const TEAMS = [
   defunct('三商虎'),
   defunct('時報鷹'),
 
-  // NPB 12 隊（npbCode 為 npb.jp/bis/teams/rst_<code>.html）
-  npb('讀賣巨人', 'g', 'giants'),
-  npb('阪神虎', 't', 'tigers'),
-  npb('中日龍', 'd', 'dragons'),
-  npb('橫濱DeNA海灣星', 'db', 'baystars'),
-  npb('廣島東洋鯉魚', 'c', 'carp'),
-  npb('東京養樂多燕子', 's', 'swallows'),
-  npb('福岡軟銀鷹', 'h', 'hawks'),
-  { ...npb('北海道火腿鬥士', 'f', 'fighters'), aliases: ['日本火腿'] },
-  npb('千葉羅德海洋', 'm', 'marines'),
-  { ...npb('東北樂天金鷹', 'e', 'eagles'), aliases: ['東北樂天'] },
-  { ...npb('埼玉西武獅', 'l', 'lions'), aliases: ['西武獅'] },
-  npb('歐力士牛', 'b', 'buffaloes'),
+  // NPB 12 隊（yahooTeamId 為 baseball.yahoo.co.jp/npb/teams/<id>/players）
+  npb('讀賣巨人', 1, 'giants'),
+  npb('阪神虎', 5, 'tigers'),
+  npb('中日龍', 4, 'dragons'),
+  npb('橫濱DeNA海灣星', 3, 'baystars'),
+  npb('廣島東洋鯉魚', 6, 'carp'),
+  npb('東京養樂多燕子', 2, 'swallows'),
+  npb('福岡軟銀鷹', 12, 'hawks'),
+  { ...npb('北海道火腿鬥士', 8, 'fighters'), aliases: ['日本火腿'] },
+  npb('千葉羅德海洋', 9, 'marines'),
+  { ...npb('東北樂天金鷹', 376, 'eagles'), aliases: ['東北樂天'] },
+  { ...npb('埼玉西武獅', 7, 'lions'), aliases: ['西武獅'] },
+  npb('歐力士牛', 11, 'buffaloes'),
 
   // MLB（「XX體系」＝該球團小聯盟體系，併入母隊當別名）
   mlb('洛杉磯道奇', ['LA道奇', '道奇']),

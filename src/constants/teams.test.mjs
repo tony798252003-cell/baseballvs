@@ -55,12 +55,12 @@ test('已解散球隊的 successor 必須是現役 CPBL 球隊（歷史分頁靠
   assert.equal(teamInfo('義大犀牛').successor, '富邦悍將')
 })
 
-test('NPB 現役剛好 12 隊且都有 npbCode 與存在的 logo', () => {
+test('NPB 現役剛好 12 隊且都有 yahooTeamId 與存在的 logo', () => {
   const npb = TEAMS.filter(t => t.org === 'NPB' && !t.defunct)
   assert.equal(npb.length, 12)
-  assert.equal(new Set(npb.map(t => t.npbCode)).size, 12)
+  assert.equal(new Set(npb.map(t => t.yahooTeamId)).size, 12)
   for (const t of npb) {
-    assert.ok(t.npbCode, `${t.name} 缺 npbCode`)
+    assert.ok(t.yahooTeamId, `${t.name} 缺 yahooTeamId`)
     assert.ok(existsSync(new URL(`../../public${t.logo}`, import.meta.url)), `${t.name} logo 檔不存在`)
   }
 })
