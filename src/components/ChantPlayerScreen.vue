@@ -115,6 +115,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { supabase } from '../lib/supabase.js'
+import { fetchAllPages } from '../lib/fetchAllPages.js'
 import { CPBL_TEAMS, TEAMS } from '../constants/teams.js'
 
 const emit = defineEmits(['back'])
@@ -124,12 +125,17 @@ const teamLogos = Object.fromEntries(TEAMS.filter(t => t.logo).map(t => [t.name,
 const allPlayers = ref([])
 const selectedTeam = ref(null)
 
+// 只列現役球員；DB 超過 1000 筆，必須分頁取完
 onMounted(async () => {
-  const { data } = await supabase
-    .from('players')
-    .select('id, name, number, photo, song, team')
-    .order('team').order('number')
-  allPlayers.value = data || []
+  try {
+    allPlayers.value = await fetchAllPages(() => supabase
+      .from('players')
+      .select('id, name, number, photo, song, team')
+      .eq('status', 'active')
+      .order('team').order('number').order('id'))
+  } catch (error) {
+    console.error('載入球員資料失敗:', error)
+  }
 })
 
 const teamPlayers = computed(() =>
