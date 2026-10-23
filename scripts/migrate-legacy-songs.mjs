@@ -5,13 +5,16 @@ import { createInterface } from 'node:readline/promises'
 import {
   TEAM_FOLDER_MAP,
   fuzzyNameMatch, parseLegacyFilename, listDropboxFolder, moveDropboxFile, getSharedLinkRawUrl,
+  getDropboxAccessToken,
 } from './lib/dropboxMusicSync.mjs'
 
 loadEnv()
 
-const DROPBOX_TOKEN = process.env.DROPBOX_TOKEN
-if (!DROPBOX_TOKEN) {
-  console.error('❌ 缺少 DROPBOX_TOKEN，請在 .env 設定（參考 .env.example）')
+let DROPBOX_TOKEN
+try {
+  DROPBOX_TOKEN = await getDropboxAccessToken()
+} catch (e) {
+  console.error(`❌ ${e.message}`)
   process.exit(1)
 }
 

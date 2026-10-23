@@ -1,5 +1,35 @@
 // scripts/lib/dropboxMusicSync.mjs
 
+const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
+const REFRESH_MARGIN_MS = 60_000
+let tokenCache = null // { token, expiresAt }
+
+export function _resetDropboxTokenCache() {
+  tokenCache = null
+}
+
+// Short-lived access token from the refresh token (cached); falls back to a legacy static DROPBOX_TOKEN.
+export async function getDropboxAccessToken({ env = process.env, fetchImpl = fetch, now = Date.now } = {}) {
+  const { DROPBOX_REFRESH_TOKEN: refresh, DROPBOX_APP_KEY: key, DROPBOX_APP_SECRET: secret } = env
+  if (refresh && key && secret) {
+    if (tokenCache && now() < tokenCache.expiresAt) return tokenCache.token
+    const res = await fetchImpl(DROPBOX_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh }).toString(),
+    })
+    if (!res.ok) throw new Error(`Dropbox 取得 access token 失敗 (${res.status}): ${await res.text()}`)
+    const { access_token, expires_in } = await res.json()
+    tokenCache = { token: access_token, expiresAt: now() + expires_in * 1000 - REFRESH_MARGIN_MS }
+    return access_token
+  }
+  if (env.DROPBOX_TOKEN) return env.DROPBOX_TOKEN
+  throw new Error('缺少 Dropbox 授權，請執行 node scripts/dropbox-auth.mjs')
+}
+
 export const TEAM_FOLDER_MAP = {
   Brothers: '中信兄弟',
   Lions: '統一獅',
