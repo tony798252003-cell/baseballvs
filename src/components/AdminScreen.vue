@@ -210,6 +210,14 @@
           </div>
         </div>
       </div>
+      <!-- 通用嗆斯曲 -->
+      <div class="flex gap-3 items-end">
+        <div class="flex-1">
+          <label class="text-xs text-slate-400 mb-1 block">通用嗆斯曲 URL（球員沒有個人曲、也沒有球隊曲時播放）</label>
+          <input v-model="genericChantUrl" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400" placeholder="https://..." />
+        </div>
+        <button @click="saveGenericChant" :disabled="saving" class="bg-yellow-400 text-slate-900 font-bold px-4 py-2 rounded-lg text-sm disabled:opacity-50">儲存</button>
+      </div>
       <!-- 新增表單 -->
       <div class="flex gap-3 items-end">
         <div>
@@ -416,6 +424,7 @@ const musicStatusFilter = ref('')
 // 嗆斯曲
 const teamChantsData = ref([])
 const chantForm = ref({ team: '', name: '', url: '' })
+const genericChantUrl = ref('')
 const chantsByTeam = computed(() => {
   const map = {}
   for (const c of teamChantsData.value) {
@@ -472,6 +481,9 @@ async function loadData() {
   // 載入嗆斯曲
   const { data: chants } = await supabase.from('team_chants').select('*').order('team').order('name')
   teamChantsData.value = chants || []
+
+  const { data: setting } = await supabase.from('app_settings').select('value').eq('key', 'generic_chant_url').maybeSingle()
+  genericChantUrl.value = setting?.value || ''
 }
 
 function editPlayer(p) {
@@ -814,6 +826,15 @@ async function addChant() {
   teamChantsData.value.push(data)
   chantForm.value = { team: '', name: '', url: '' }
   showToast('✅ 已新增')
+}
+
+async function saveGenericChant() {
+  saving.value = true
+  const { data, error } = await supabase.from('app_settings')
+    .upsert({ key: 'generic_chant_url', value: genericChantUrl.value.trim() }, { onConflict: 'key' }).select('key')
+  saving.value = false
+  if (error || !data?.length) { showToast('❌ 儲存失敗'); return }
+  showToast('✅ 已儲存')
 }
 
 async function deleteChant(c) {

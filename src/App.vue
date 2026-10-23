@@ -382,10 +382,14 @@ function getPlayerPositions(player) {
 const showDefenseReorganize = ref(false)
 const pendingThreeOutsCallbacks = ref(null)
 
+const genericChantUrl = ref('')
+
 onMounted(async () => {
   await loadCSVFromURL()
   const { data } = await supabase.from('team_chants').select('team, name, url')
   if (data) teamChants.value = data
+  const { data: setting } = await supabase.from('app_settings').select('value').eq('key', 'generic_chant_url').maybeSingle()
+  genericChantUrl.value = setting?.value || ''
   
   // 初始化語音引擎
   if ('speechSynthesis' in window) {
@@ -566,11 +570,11 @@ const substituteBatter = (player) => {
   
   // 播放代打語音
   speak(TEXTS.game.speech.substitute(player.name), processSpeechText, isMuted.value, 
-    !isMuted.value ? () => playBatterMusic(player, teamChants.value) : null)
+    !isMuted.value ? () => playBatterMusic(player, teamChants.value, genericChantUrl.value) : null)
   
   // 如果沒有語音或靜音，直接播放音樂
   if (isMuted.value || !('speechSynthesis' in window)) {
-    playBatterMusic(player, teamChants.value)
+    playBatterMusic(player, teamChants.value, genericChantUrl.value)
   }
 
   // 進階模式：同步更新 team object 並檢查守位相容性
@@ -675,7 +679,7 @@ const skipIntro = () => {
   // 確保第一棒的語音和音樂播放
   if (currentPlayer.value && !isMuted.value) {
     setTimeout(() => speakBatterName(currentPlayer.value.name, currentBatterIndex.value), 300)
-    setTimeout(() => playBatterMusic(currentPlayer.value, teamChants.value), 3800)
+    setTimeout(() => playBatterMusic(currentPlayer.value, teamChants.value, genericChantUrl.value), 3800)
   }
 }
 
@@ -780,7 +784,7 @@ watch([currentBatterIndex, mode, isMuted, showLineupIntro], ([newIndex, newMode,
                 intro: player.intro,
                 audioRef: !!audioRef.value 
               })
-              playBatterMusic(player, teamChants.value)
+              playBatterMusic(player, teamChants.value, genericChantUrl.value)
             } else {
               console.log('跳過音樂播放:', { 
                 isMuted: isMuted.value, 

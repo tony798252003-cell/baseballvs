@@ -1,9 +1,10 @@
 import { ref } from 'vue'
+import { pickFallbackChant } from '../lib/chantFallback.js'
 
 export function useAudio() {
   const audioRef = ref(null)
   
-  const playBatterMusic = (player, teamChants = []) => {
+  const playBatterMusic = (player, teamChants = [], genericChantUrl = '') => {
     console.log('playBatterMusic 被調用:', { 
       player: player?.name,
       hasAudioRef: !!audioRef.value,
@@ -61,11 +62,10 @@ export function useAudio() {
         .then(() => console.log('song 開始播放'))
         .catch(error => console.log("Auto-play prevented:", error))
     } else {
-      // 沒有個人應援曲，嘗試播放球隊嗆斯曲
-      const chants = teamChants.filter(c => c.team === player.team)
-      if (chants.length > 0) {
-        const chant = chants[Math.floor(Math.random() * chants.length)]
-        console.log('播放球隊嗆斯曲:', chant.name)
+      // 沒有個人應援曲：本隊嗆斯曲 → 後繼球隊嗆斯曲 → 通用嗆斯曲
+      const chant = pickFallbackChant(player, teamChants, genericChantUrl)
+      if (chant) {
+        console.log('播放嗆斯曲:', chant.kind, chant.url)
         audioRef.value.src = chant.url
         audioRef.value.loop = false
         audioRef.value.onended = () => {
@@ -74,7 +74,7 @@ export function useAudio() {
         }
         audioRef.value.play().catch(error => console.log("Auto-play prevented:", error))
       } else {
-        console.log('球員沒有 song 或 intro，也沒有球隊嗆斯曲')
+        console.log('球員沒有 song 或 intro，也沒有嗆斯曲')
       }
     }
   }
