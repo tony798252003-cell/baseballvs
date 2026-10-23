@@ -22,9 +22,14 @@ export function newState(next = 1) {
   return { next, found: [], highestValid: 0, invalidRun: 0 }
 }
 
-// 無效 Acnt 會連續出現；至少見過一個有效 id、之後連續 N 個無效才視為掃完（還沒有任何有效 id 時不停）
-export function shouldStop(state, limit = STOP_AFTER_INVALID) {
-  return state.highestValid > 0 && state.invalidRun >= limit
+// 無效 Acnt 會連續出現（實測 4037 之後有 >300 個空洞，之後仍有有效 id）：
+// 至少見過一個有效 id、連續 N 個無效、且已掃過 DB 內最大的 cpbl_acnt，才視為掃完
+export function shouldStop(state, maxDbAcnt = 0, limit = STOP_AFTER_INVALID) {
+  return state.highestValid > 0 && state.invalidRun >= limit && state.next > maxDbAcnt
+}
+
+export function maxAcnt(dbRows) {
+  return Math.max(0, ...dbRows.map(r => Number(r.cpbl_acnt)).filter(Number.isFinite))
 }
 
 // 純函式：記錄單一 id 的結果並把 next 往前推
@@ -134,6 +139,10 @@ async function main() {
   if (args.start !== null) state = { ...state, next: args.start, invalidRun: 0 }
   console.log(`起點 Acnt=${formatAcnt(state.next)}，已找到 ${state.found.length} 筆，最高有效 ${state.highestValid}，連續無效 ${state.invalidRun}${args.apply ? '（--apply）' : '（dry run）'}`)
 
+  loadEnv()
+  const supabase = createServiceClient()
+  const dbRows = await fetchAllPages(() => supabase.from('players').select('id, name, org, cpbl_acnt, is_coach').eq('org', 'CPBL').order('id'))
+  const maxDbAcnt = maxAcnt(dbRows)
   const ctx = { session: await createCpblSession(), createSession: createCpblSession, sleep }
 
   // Ctrl-C / kill：處理完手上這個 id、存檔後再結束，避免丟掉未滿 25 個的進度
@@ -142,7 +151,7 @@ async function main() {
 
   let processed = 0
   try {
-    while (!interrupted && !shouldStop(state) && processed < args.limit) {
+    while (!interrupted && !shouldStop(state, maxDbAcnt) && processed < args.limit) {
       const id = state.next
       const person = await fetchPerson(id, ctx)
       state = advanceState(state, id, person)
@@ -163,12 +172,9 @@ async function main() {
     console.log(`已中斷，進度已保存（next=${state.next}）`)
     return
   }
-  const done = shouldStop(state)
+  const done = shouldStop(state, maxDbAcnt)
   console.log(done ? `掃描完成：連續 ${STOP_AFTER_INVALID} 個無效，最高有效 Acnt=${formatAcnt(state.highestValid)}` : `本次處理 ${processed} 個 id，尚未掃完（next=${state.next}）`)
 
-  loadEnv()
-  const supabase = createServiceClient()
-  const dbRows = await fetchAllPages(() => supabase.from('players').select('id, name, org, cpbl_acnt, is_coach').eq('org', 'CPBL').order('id'))
   const plan = planBackfill(state.found, dbRows)
   console.log(`找到 ${state.found.length}；DB 已有 ${plan.skipped}；配對舊資料補 acnt ${plan.matches.length}；同名待判斷 ${plan.ambiguous.length}；新增 ${plan.inserts.length}`)
 

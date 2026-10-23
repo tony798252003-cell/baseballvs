@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatAcnt, newState, advanceState, shouldStop, buildRow, parseArgs, planBackfill, fetchPerson } from './backfill-cpbl-history.mjs'
+import { formatAcnt, newState, advanceState, shouldStop, buildRow, parseArgs, planBackfill, fetchPerson, maxAcnt } from './backfill-cpbl-history.mjs'
 
 test('formatAcnt zero-pads to 10 digits (site key format)', () => {
   assert.equal(formatAcnt(7880), '0000007880')
@@ -121,4 +121,19 @@ test('fetchPerson: persistently unparseable page is a failure (throws), never an
   const bad = { status: 200, url: 'https://www.cpbl.com.tw/team/person?Acnt=0000000001', html: 'cdn interstitial' }
   const ctx = { session: fakeSession([bad]), createSession: async () => fakeSession([bad]), attempts: 2 }
   await assert.rejects(fetchPerson(1, ctx), /失敗/)
+})
+
+test('shouldStop: a 300-invalid gap below the highest Acnt already in the DB does not stop; past it, it does', () => {
+  let s = newState(1)
+  s = advanceState(s, 1, { name: 'A', isPlayer: true })
+  for (let i = 2; i <= 301; i++) s = advanceState(s, i, null)
+  assert.equal(s.invalidRun, 300)
+  assert.equal(shouldStop(s, 7880), false)
+  assert.equal(shouldStop(s, 0), true)
+  assert.equal(shouldStop({ ...s, next: 7881 }, 7880), true)
+})
+
+test('maxAcnt: highest numeric cpbl_acnt, ignoring null rows', () => {
+  assert.equal(maxAcnt([{ cpbl_acnt: '0000007880' }, { cpbl_acnt: null }, { cpbl_acnt: '0000000012' }]), 7880)
+  assert.equal(maxAcnt([]), 0)
 })
