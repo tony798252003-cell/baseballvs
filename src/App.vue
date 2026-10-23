@@ -270,7 +270,7 @@ const {
 const teamLogos = Object.fromEntries(TEAMS.filter(t => t.logo).map(t => [t.name, t.logo]))
 
 // 解構 audio
-const { audioRef, playBatterMusic, stopMusic } = audio
+const { audioRef, playBatterMusic, pauseMusic, stopMusic } = audio
 
 // 解構 speech（但不包括 speakBatterName，因為我們會覆寫它）
 const { processSpeechText, speakIntro, cancel: cancelSpeech } = speech
@@ -563,10 +563,7 @@ const substituteBatter = (player) => {
   selectedTeam.value = null
   
   // 中断音乐
-  if (audioRef.value) {
-    audioRef.value.pause()
-    audioRef.value.currentTime = 0
-  }
+  stopMusic()
   
   // 播放代打語音
   speak(TEXTS.game.speech.substitute(player.name), processSpeechText, isMuted.value, 
@@ -617,12 +614,12 @@ const substitutePitcher = (pitcher) => {
   showPitcherSelect.value = false
   selectedTeam.value = null
   
-  if (audioRef.value) audioRef.value.pause()
+  pauseMusic()
   
   // 播放換投語音
   const resumeMusic = () => {
-    if (!isMuted.value && audioRef.value?.src && audioRef.value.paused) {
-      setTimeout(() => audioRef.value.play().catch(() => {}), 300)
+    if (!isMuted.value) {
+      setTimeout(() => audio.resumeMusic(), 300)
     }
   }
   
@@ -630,11 +627,7 @@ const substitutePitcher = (pitcher) => {
   
   // 如果沒有語音或靜音，稍等後恢復音樂
   if ((isMuted.value || !('speechSynthesis' in window)) && !isMuted.value) {
-    setTimeout(() => {
-      if (audioRef.value?.src && audioRef.value.paused) {
-        audioRef.value.play().catch(() => {})
-      }
-    }, 500)
+    setTimeout(() => audio.resumeMusic(), 500)
   }
 }
 
@@ -799,14 +792,12 @@ watch([currentBatterIndex, mode, isMuted, showLineupIntro], ([newIndex, newMode,
       }
     } else {
       console.log('無法播放:', { hasPlayer: !!player, hasAudioRef: !!audioRef.value })
-      if (audioRef.value) {
-        audioRef.value.pause()
-      }
+      pauseMusic()
     }
   } else if (audioRef.value && (newShowIntro || newMode !== 'game')) {
     console.log('停止音樂:', { newShowIntro, newMode })
     // 如果開始播放介紹或離開遊戲模式，停止音樂
-    audioRef.value.pause()
+    pauseMusic()
   }
 }, { deep: true })
 
@@ -824,10 +815,7 @@ const nextBatter = () => {
 
 const handleHit = (bases) => {
   // 中断当前播放的应援曲
-  if (audioRef.value) {
-    audioRef.value.pause()
-    audioRef.value.currentTime = 0
-  }
+  stopMusic()
   
   // 播放安打音效（使用輔助函數）
   playHitSound(isMuted.value)
@@ -884,10 +872,7 @@ const handleHit = (bases) => {
 
 const handleWalk = () => {
   // 中斷背景音樂
-  if (audioRef.value) {
-    audioRef.value.pause()
-    audioRef.value.currentTime = 0
-  }
+  stopMusic()
   // 記錄統計：四壞球
   if (currentPlayer.value && selectedPitcher.value) {
     recordWalk(selectedPitcher.value, currentPlayer.value)
@@ -934,10 +919,7 @@ const handleWalk = () => {
 // 觸身球 (HBP - Hit By Pitch)
 const handleHBP = () => {
   // 中斷背景音樂
-  if (audioRef.value) {
-    audioRef.value.pause()
-    audioRef.value.currentTime = 0
-  }
+  stopMusic()
   // 記錄打者攻擊結果
   if (currentPlayer.value) {
     const batterId = `${isTop.value ? 'away' : 'home'}_${currentPlayer.value.name}${currentPlayer.value.number}`
@@ -1028,10 +1010,7 @@ const onDefenseReorganizeConfirm = ({ newLineup, newPositions }) => {
 // 通用出局處理
 const handleOutBase = (speechText, toastText) => {
   // 中断当前播放的应援曲
-  if (audioRef.value) {
-    audioRef.value.pause()
-    audioRef.value.currentTime = 0
-  }
+  stopMusic()
   
   // 播放出局音效
   playOutSound(isMuted.value)
