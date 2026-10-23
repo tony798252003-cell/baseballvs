@@ -59,7 +59,12 @@
 - 參數指定範圍，至少：`--team <隊名>`（可多個）、`--league 一軍|二軍`、`--org CPBL|NPB|MLB`；預設只列 `status='active'`、非教練、**`song` 為空**的球員。
 - 進度存本機狀態檔（例：`scripts/.cache/chant-studio/<批次>.json`，已在 `.gitignore`），關掉再開可接續；下載的原曲與成品也放在 `scripts/.cache/chant-studio/` 下。
 - 沿用現有：`scripts/lib/env.mjs`（Supabase service client、`.env`）、`scripts/lib/dropboxMusicSync.mjs`（`uploadToDropbox`、`getSharedLinkRawUrl`）、ffmpeg（`~/bin/ffmpeg`，以 PATH 或環境變數找）、yt-dlp（PATH 或 `~/.local/bin/yt-dlp`）。
-- 需要 `.env` 的 `DROPBOX_TOKEN`（目前空白，使用者上傳前提供）。
+- **Dropbox 長期授權（使用者要求）**：Dropbox 產生的 access token 約 4 小時過期，改用 refresh token：
+  - `.env` 新增 `DROPBOX_APP_KEY`、`DROPBOX_APP_SECRET`、`DROPBOX_REFRESH_TOKEN`（名稱寫進 `.env.example`）。
+  - 一次性設定 script（例：`scripts/dropbox-auth.mjs`）：印出 `https://www.dropbox.com/oauth2/authorize?client_id=<key>&token_access_type=offline&response_type=code` 讓使用者開啟授權，使用者貼回授權碼，script 換取 refresh token 並**直接寫入 `.env`**（不印出 token）。
+  - `scripts/lib/dropboxMusicSync.mjs` 新增取得 access token 的函式：有 refresh token 就用 `https://api.dropboxapi.com/oauth2/token`（`grant_type=refresh_token`）換短期 token 並快取到過期前；沒有才退回 `DROPBOX_TOKEN`。既有使用 `DROPBOX_TOKEN` 的 script 改走這個函式。
+  - App 權限需要 `files.content.read`、`files.content.write`、`sharing.read`、`sharing.write`。
+  - 後台 AdminScreen 的 Dropbox token 輸入框維持現狀（不在範圍內）。
 
 ### 2. 找版本
 
