@@ -77,13 +77,14 @@
         </div>
 
         <!-- 打者列表 -->
-        <div class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 content-start">
-          <button v-for="player in advancedFilteredBatters" :key="player.name + player.number"
+        <div v-if="needsTeam" class="flex-1 text-center text-slate-400 py-10 font-bold">請先選擇球隊</div>
+        <div v-else class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 content-start">
+          <button v-for="player in advancedFilteredBatters" :key="player.id"
             @click="$emit('add-player', player)"
-            :disabled="currentLineup.some(p => p.name === player.name && p.number === player.number)"
+            :disabled="currentLineup.some(p => p.id === player.id)"
             class="bg-white hover:shadow-md disabled:bg-slate-50 disabled:opacity-40 p-2 rounded-lg transition-all duration-150 transform hover:scale-105 text-left border border-slate-100 hover:border-indigo-300 disabled:border-slate-100 shadow-sm cursor-pointer disabled:cursor-not-allowed">
             <div class="flex items-start gap-2">
-              <img v-if="player.photo" :src="player.photo" class="w-12 h-12 rounded-full object-cover border-2 border-indigo-300 shadow-md flex-shrink-0" />
+              <img v-if="player.photo" :src="player.photo" loading="lazy" class="w-12 h-12 rounded-full object-cover border-2 border-indigo-300 shadow-md flex-shrink-0" />
               <div v-else class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-xl flex-shrink-0">⚾</div>
               <div class="flex-1 min-w-0 flex flex-col justify-between">
                 <div class="flex items-center gap-1 mb-1">
@@ -123,12 +124,13 @@
         </div>
 
         <!-- 投手列表 -->
-        <div class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 content-start">
-          <button v-for="player in filteredPitchers" :key="player.name + player.number"
+        <div v-if="needsTeam" class="flex-1 text-center text-slate-400 py-10 font-bold">請先選擇球隊</div>
+        <div v-else class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 content-start">
+          <button v-for="player in filteredPitchers" :key="player.id"
             @click="selectPitcher(player)"
             class="bg-white hover:shadow-md p-2 rounded-lg transition-all duration-150 transform hover:scale-105 text-left border border-slate-100 hover:border-amber-300 shadow-sm cursor-pointer">
             <div class="flex items-start gap-2">
-              <img v-if="player.photo" :src="player.photo" class="w-12 h-12 rounded-full object-cover border-2 border-amber-300 shadow-md flex-shrink-0" />
+              <img v-if="player.photo" :src="player.photo" loading="lazy" class="w-12 h-12 rounded-full object-cover border-2 border-amber-300 shadow-md flex-shrink-0" />
               <div v-else class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-xl flex-shrink-0">⚾</div>
               <div class="flex-1 min-w-0 flex flex-col justify-between">
                 <div class="flex items-center gap-1 mb-1">
@@ -295,6 +297,7 @@
 import { computed, ref, watch } from 'vue';
 import { XCircleIcon, PlayIcon } from './Icons.vue';
 import OrgTabs from './OrgTabs.vue';
+import { requiresTeamSelection } from '../composables/playerFilterLogic.js';
 
 const props = defineProps({
   gameType: String,
@@ -439,6 +442,8 @@ watch(() => props.replacingIndex, (idx) => {
 watch(() => props.currentPitcher, (p) => {
   if (p) selectingPitcher.value = false;
 });
+
+const needsTeam = computed(() => requiresTeamSelection(props.selectedLeague, props.selectedTeam));
 
 const isSelectingPitcher = computed(() =>
   selectingPitcher.value && (props.replacingIndex === null || props.replacingIndex === undefined || props.replacingIndex < 0)

@@ -45,13 +45,14 @@
       </div>
 
       <!-- 投手列表 -->
-      <div class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-        <button v-for="pitcher in filteredPitchers" :key="pitcher.name + pitcher.number"
+      <div v-if="needsTeam" class="flex-1 text-center text-slate-400 py-10 font-bold">請先選擇球隊</div>
+      <div v-else class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
+        <button v-for="pitcher in filteredPitchers" :key="pitcher.id"
           @click="$emit('select', pitcher)"
-          :disabled="playedPitchers.has(pitcher.name + pitcher.number)"
+          :disabled="playedPitchers.has(pitcher.id)"
           class="bg-white hover:shadow-md disabled:bg-slate-50 disabled:opacity-50 p-2 rounded-lg transition-all duration-150 transform hover:scale-105 disabled:scale-100 text-left border border-amber-100 hover:border-amber-400 disabled:border-slate-100 shadow-sm cursor-pointer disabled:cursor-not-allowed">
           <div class="flex items-start gap-2">
-            <img v-if="pitcher.photo" :src="pitcher.photo" class="w-12 h-12 rounded-full object-cover border-2 border-amber-300 shadow-md flex-shrink-0" />
+            <img v-if="pitcher.photo" :src="pitcher.photo" loading="lazy" class="w-12 h-12 rounded-full object-cover border-2 border-amber-300 shadow-md flex-shrink-0" />
             <div v-else class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-xl flex-shrink-0">⚾</div>
             <div class="flex-1 min-w-0 flex flex-col justify-between">
               <div class="flex items-center gap-1 mb-1">
@@ -71,8 +72,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { XCircleIcon } from './Icons.vue';
 import OrgTabs from './OrgTabs.vue';
+import { requiresTeamSelection } from '../composables/playerFilterLogic.js';
 
 const props = defineProps({
   show: Boolean,
@@ -92,4 +95,6 @@ const props = defineProps({
 });
 
 defineEmits(['close', 'select', 'update:selectedTeam', 'update:selectedLeague', 'update:selectedOrg']);
+
+const needsTeam = computed(() => requiresTeamSelection(props.selectedLeague, props.selectedTeam));
 </script>

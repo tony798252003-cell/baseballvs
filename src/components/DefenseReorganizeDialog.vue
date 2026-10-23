@@ -113,15 +113,16 @@
 
             <!-- Player grid -->
             <div class="flex-1 overflow-y-auto px-3 py-2">
-              <div class="grid grid-cols-3 gap-2">
-                <button v-for="player in filteredPickerPlayers" :key="player.name + player.number"
+              <div v-if="needsTeam" class="text-center text-slate-400 py-10 font-bold">請先選擇球隊</div>
+              <div v-else class="grid grid-cols-3 gap-2">
+                <button v-for="player in filteredPickerPlayers" :key="player.id"
                   @click="selectPlayer(player)"
                   :class="['p-2 rounded-xl border text-left transition hover:shadow-md cursor-pointer',
                     isCurrentSlotPlayer(player) ? 'ring-2 ring-indigo-500 border-indigo-300 bg-indigo-50' :
                     isInOtherSlot(player) ? 'border-amber-300 bg-amber-50 hover:border-amber-400' :
                     'border-slate-200 bg-white hover:border-indigo-300']">
                   <div class="flex items-center gap-2 mb-1">
-                    <img v-if="player.photo" :src="player.photo" class="w-10 h-10 rounded-full object-cover flex-shrink-0 border-2 border-slate-200" />
+                    <img v-if="player.photo" :src="player.photo" loading="lazy" class="w-10 h-10 rounded-full object-cover flex-shrink-0 border-2 border-slate-200" />
                     <div v-else class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-sm flex-shrink-0">⚾</div>
                     <div class="flex-1 min-w-0">
                       <div :class="['font-black leading-tight', player.name.length > 5 ? 'text-xs' : 'text-sm']">{{ player.name }}</div>
@@ -135,7 +136,7 @@
                   </div>
                 </button>
               </div>
-              <div v-if="filteredPickerPlayers.length === 0" class="text-center text-slate-400 py-10 font-bold">
+              <div v-if="!needsTeam && filteredPickerPlayers.length === 0" class="text-center text-slate-400 py-10 font-bold">
                 沒有符合條件的球員
               </div>
             </div>
@@ -155,7 +156,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import OrgTabs from './OrgTabs.vue'
-import { filterRosterByLeague, sortTeamsByTeamsOrder } from '../composables/playerFilterLogic.js'
+import { filterRosterByLeague, sortTeamsByTeamsOrder, requiresTeamSelection } from '../composables/playerFilterLogic.js'
 
 const FIELDING_POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH']
 const PITCHER_POSITIONS = ['SP', 'RP', 'CP', 'P']
@@ -234,6 +235,8 @@ const leaguePlayers = computed(() =>
 const availableTeams = computed(() =>
   sortTeamsByTeamsOrder(new Set(leaguePlayers.value.map(p => p.team)))
 )
+
+const needsTeam = computed(() => requiresTeamSelection(pickerLeague.value, pickerTeam.value))
 
 // 篩選後的球員清單
 const filteredPickerPlayers = computed(() => {

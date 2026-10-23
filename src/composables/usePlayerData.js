@@ -19,6 +19,7 @@ export function usePlayerData() {
         .order('id'))
 
       roster.value = data.map(p => ({
+        id: p.id,
         name: p.name,
         number: p.number,
         team: p.team,

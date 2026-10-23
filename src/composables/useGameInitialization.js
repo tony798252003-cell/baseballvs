@@ -71,8 +71,8 @@ export function useGameInitialization(gameState, showToast) {
   const initializePlayedPlayers = (needHomeTeamIntro) => {
     playedBatters.value = new Set()
     playedPitchers.value = new Set([
-      selectedPitcher.value && `${selectedPitcher.value.name}${selectedPitcher.value.number}`,
-      gameType.value !== 'single' && awayTeam.value.pitcher && `${awayTeam.value.pitcher.name}${awayTeam.value.pitcher.number}`
+      selectedPitcher.value?.id,
+      gameType.value !== 'single' && awayTeam.value.pitcher?.id
     ].filter(Boolean))
     
     // 設定需要主隊介紹的標記

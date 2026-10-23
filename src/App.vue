@@ -448,7 +448,7 @@ const addToLineup = (player) => {
   }
 
   // 正常添加模式
-  if (currentLineup.value.some(p => p.name === player.name && p.number === player.number)) return
+  if (currentLineup.value.some(p => p.id === player.id)) return
   if (currentLineup.value.length >= 9) {
     showToast(TEXTS.lineup.full, TEXTS.toast.alert)
     return
@@ -598,7 +598,7 @@ const substituteBatter = (player) => {
 const substitutePitcher = (pitcher) => {
   const oldPitcher = selectedPitcher.value
   selectedPitcher.value = pitcher
-  playedPitchers.value.add(pitcher.name + pitcher.number)
+  playedPitchers.value.add(pitcher.id)
   
   // 重要：更新對應隊伍的投手，這樣換局時才不會換回來
   if (gameType.value === 'versus' || gameType.value === 'advanced') {
@@ -814,7 +814,7 @@ watch([currentBatterIndex, mode, isMuted, showLineupIntro], ([newIndex, newMode,
 const nextBatter = () => {
   // 記錄當前打者已上場
   if (currentPlayer.value) {
-    playedBatters.value.add(currentPlayer.value.name + currentPlayer.value.number)
+    playedBatters.value.add(currentPlayer.value.id)
   }
   
   balls.value = 0

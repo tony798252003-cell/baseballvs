@@ -8,6 +8,8 @@ export function usePlayerFilters(roster, selectedTeam) {
 
   // 換聯盟時清掉已選球隊（舊球隊不屬於新聯盟）
   watch(selectedOrg, () => { selectedTeam.value = null })
+  // 換分類時也清掉（與 DefenseReorganizeDialog 一致；舊球隊在新分類可能沒有球員）
+  watch(selectedLeague, () => { selectedTeam.value = null })
 
   // 球隊列表：僅限目前聯盟（依 DB org 欄位），依 TEAMS 順序
   const teams = computed(() => {
