@@ -91,3 +91,48 @@ test('safety valve blocks empty pages and large drops (a broken scrape must not 
   assert.equal(checkSafetyValve({ a: 5, b: 40 }, null).ok, true)
   assert.equal(checkSafetyValve({}, { a: 10 }).ok, false)
 })
+
+// 球員換聯盟時 key 跟著人走：要搬既有列（保留歌曲等手動欄位），不能再插一筆重複
+test('row of another org carrying the same key is updated and moved to the syncing org, not duplicated', () => {
+  const dbPlayers = [db({ id: 5, org: 'MLB', cpbl_acnt: 'X', team: '紐約洋基' })]
+  const p = planRosterSync({ ...base, dbPlayers, scraped: [sc({ key: 'X' })] })
+  assert.deepEqual(p.inserts, [])
+  assert.equal(p.updates.length, 1)
+  assert.equal(p.updates[0].id, 5)
+  assert.equal(p.updates[0].patch.org, 'CPBL')
+  const second = planRosterSync({ ...base, dbPlayers: apply(dbPlayers, p), scraped: [sc({ key: 'X' })] })
+  for (const k of Object.keys(second)) assert.deepEqual(second[k], [], k)
+})
+
+// 回填建立的離隊教練列帶 acnt；若也參與同名比對，現役同名教練會永遠卡在衝突
+test('keyless coach matches only keyless coach rows; a keyed historical coach of the same name is ignored', () => {
+  const dbPlayers = [
+    db({ id: 7, cpbl_acnt: null, name: '教', is_coach: true }),
+    db({ id: 8, cpbl_acnt: '0000000123', name: '教', is_coach: true, status: 'departed' }),
+  ]
+  const p = planRosterSync({ ...base, dbPlayers, scraped: [sc({ key: null, name: '教', is_coach: true, team: '獅' })] })
+  assert.deepEqual(p.conflicts, [])
+  assert.deepEqual(p.updates, [{ id: 7, patch: { team: '獅' } }])
+})
+
+test('several keyless coach rows with one name: the single active one wins instead of a conflict', () => {
+  const dbPlayers = [
+    db({ id: 7, cpbl_acnt: null, name: '教', is_coach: true, status: 'departed' }),
+    db({ id: 8, cpbl_acnt: null, name: '教', is_coach: true }),
+  ]
+  const p = planRosterSync({ ...base, dbPlayers, scraped: [sc({ key: null, name: '教', is_coach: true })] })
+  assert.deepEqual(p.conflicts, [])
+  assert.deepEqual(p.updates, [])
+  assert.deepEqual(p.inserts, [])
+})
+
+// 無 key 的球員若被新增，下一次同步仍無法比對，會每次都再插一筆
+test('keyless non-coach scrape row is skipped (reported), never inserted, and stays idempotent', () => {
+  const scraped = [sc({ key: null, name: '無號' })]
+  const first = planRosterSync({ ...base, dbPlayers: [], scraped })
+  assert.deepEqual(first.inserts, [])
+  assert.deepEqual(first.skipped, [{ name: '無號', team: '兄弟' }])
+  const second = planRosterSync({ ...base, dbPlayers: apply([], first), scraped })
+  assert.deepEqual(second.inserts, [])
+  assert.deepEqual(second.updates, [])
+})

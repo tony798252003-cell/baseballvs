@@ -6,10 +6,14 @@ const INSERT_ONLY_FIELDS = ['pitching_hand', 'batting_hand', 'main_position']
 const statusOf = (s) => (s.roster_mark === '#' ? 'departed' : 'active')
 
 export function planRosterSync({ dbPlayers, scraped, org, keyField }) {
-  const plan = { inserts: [], updates: [], departures: [], returns: [], transfers: [], conflicts: [] }
+  const plan = { inserts: [], updates: [], departures: [], returns: [], transfers: [], conflicts: [], skipped: [] }
   const orgRows = dbPlayers.filter((r) => r.org === org)
-  const byKey = new Map(orgRows.filter((r) => r[keyField] != null).map((r) => [String(r[keyField]), r]))
-  const coaches = orgRows.filter((r) => r.is_coach)
+  // 外部 id 不分聯盟：別聯盟的列帶同一個 key 代表同一人換了聯盟，要搬列而不是新增重複列（本聯盟的列優先）。
+  // 沒有共同 key 的跨聯盟移籍（例如中職旅外）不在此處理。
+  const keyed = (rows) => rows.filter((r) => r[keyField] != null).map((r) => [String(r[keyField]), r])
+  const byKey = new Map([...keyed(dbPlayers.filter((r) => r.org !== org)), ...keyed(orgRows)])
+  // 無 key 的教練只比對無 key 的教練列：回填產生的歷史教練列帶 acnt，不可造成永久同名衝突
+  const coaches = orgRows.filter((r) => r.is_coach && r[keyField] == null)
   const matched = new Set()
   const conflictNames = new Set()
 
@@ -17,14 +21,20 @@ export function planRosterSync({ dbPlayers, scraped, org, keyField }) {
     let row
     if (s.key != null) {
       row = byKey.get(String(s.key))
+    } else if (!s.is_coach) {
+      // 無 key 的球員無法辨識，若新增會每次重跑都再插一筆
+      plan.skipped.push({ name: s.name, team: s.team })
+      continue
     } else {
       const hits = coaches.filter((r) => r.name === s.name)
-      if (hits.length > 1) {
+      const active = hits.filter((r) => r.status === 'active')
+      const pick = hits.length > 1 && active.length === 1 ? active : hits
+      if (pick.length > 1) {
         conflictNames.add(s.name)
         if (!plan.conflicts.includes(s.name)) plan.conflicts.push(s.name)
         continue
       }
-      row = hits[0]
+      row = pick[0]
     }
 
     const status = statusOf(s)
@@ -37,7 +47,7 @@ export function planRosterSync({ dbPlayers, scraped, org, keyField }) {
     }
 
     matched.add(row.id)
-    const patch = {}
+    const patch = row.org !== org ? { org } : {}
     for (const f of OFFICIAL_FIELDS) {
       const next = f === 'status' ? status : s[f]
       if (next !== undefined && next !== row[f]) patch[f] = next

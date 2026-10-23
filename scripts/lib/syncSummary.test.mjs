@@ -43,3 +43,9 @@ test('keyField labels the link count and insert fallback (NPB prints npb_id, not
   assert.match(out, /新增：99/)
   assert.doesNotMatch(out, /cpbl_acnt/)
 })
+
+// 被略過的無 key 球員必須讓操作者看見，否則會默默少人
+test('summary warns about skipped keyless players', () => {
+  const out = buildSummary({ plan: { ...empty, skipped: [{ name: '無號', team: '統一獅' }] } })
+  assert.match(out, /略過無 key 的球員.*1：無號\(統一獅\)/)
+})

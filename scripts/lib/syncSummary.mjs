@@ -14,6 +14,7 @@ export function buildSummary({ plan, links = [], ambiguous = [], pageCounts = {}
   if (plan.departures.length) lines.push(`離隊：${plan.departures.map((d) => `${d.name}(${d.team})`).join('、')}`)
   if (plan.returns.length) lines.push(`回鍋：${names(plan.returns)}`)
   if (dedupedCoaches.length) lines.push(`去重（球員兼教練，保留球員列）${dedupedCoaches.length}：${names(dedupedCoaches)}`)
+  if (plan.skipped?.length) lines.push(`警告：略過無 key 的球員（無法比對，不新增）${plan.skipped.length}：${plan.skipped.map((x) => `${x.name}(${x.team})`).join('、')}`)
   if (plan.conflicts.length) lines.push(`衝突（同名多筆教練，略過）：${plan.conflicts.join('、')}`)
   if (ambiguous.length) lines.push(`無法比對（同名多筆未綁定）：${ambiguous.map((a) => `${a.name}[${a.candidates.join(',')}]`).join('、')}`)
   return lines.join('\n')
