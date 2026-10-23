@@ -25,18 +25,20 @@ export function saveState(state, dir = STUDIO_DIR) {
   renameSync(tmp, file)
 }
 
-// Adds new players as pending cards; existing cards and unlisted players are kept untouched.
+// Adds new players as pending cards; existing cards keep their edits but get name/team/number/position
+// refreshed from the given rows; unlisted players' cards are kept untouched.
 export function mergePlayers(state, players) {
   const cards = { ...state.cards }
   for (const pl of players) {
     const id = String(pl.id ?? pl.playerId)
-    if (cards[id]) continue
+    const roster = { name: pl.name, team: pl.team, number: pl.number, position: pl.main_position ?? pl.position }
+    if (cards[id]) {
+      cards[id] = { ...cards[id], ...roster }
+      continue
+    }
     cards[id] = {
       playerId: id,
-      name: pl.name,
-      team: pl.team,
-      number: pl.number,
-      position: pl.main_position ?? pl.position,
+      ...roster,
       status: 'pending',
       candidates: [],
       chosen: 0,

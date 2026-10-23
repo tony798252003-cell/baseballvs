@@ -60,3 +60,16 @@ test('batchName is stable regardless of team order (same batch must reopen same 
   assert.equal(a, b)
   assert.notEqual(a, batchName({ teams: ['樂天桃猿'], league: '一軍', org: 'CPBL' }))
 })
+
+test('mergePlayers refreshes roster fields but keeps edits (a renumbered/traded player must show current DB data)', () => {
+  const s = mergePlayers({ batch: 'b', cards: {} }, [p('1', 'A')])
+  s.cards['1'].status = 'resolved'
+  s.cards['1'].A = 3.2
+  const m = mergePlayers(s, [{ id: 1, name: 'A2', team: '統一獅', number: '99', main_position: '1B' }])
+  assert.deepEqual(
+    { name: m.cards['1'].name, team: m.cards['1'].team, number: m.cards['1'].number, position: m.cards['1'].position },
+    { name: 'A2', team: '統一獅', number: '99', position: '1B' },
+  )
+  assert.equal(m.cards['1'].status, 'resolved')
+  assert.equal(m.cards['1'].A, 3.2)
+})
