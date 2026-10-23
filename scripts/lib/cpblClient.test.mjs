@@ -80,10 +80,10 @@ test('parsePersonPage returns null for the homepage served on an invalid Acnt', 
 })
 
 test('parsePersonPage canonicalizes former team names', () => {
-  // 退役球員頁首顯示當年隊名（Lamigo），需對到統一的球隊名或原樣保留
+  // 退役球員頁首顯示當年隊名簡稱（Lamigo），需對到 TEAMS 的正式隊名，否則會成為未知隊名
   const p = parsePersonPage(fx('per_0000000064.html'))
   assert.equal(p.name, '陳金鋒')
-  assert.equal(p.team, 'Lamigo')
+  assert.equal(p.team, 'Lamigo桃猿')
 })
 
 test('parsePersonPage splits 二軍 suffix and marks staff pages as non-player', () => {
