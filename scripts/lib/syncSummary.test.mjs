@@ -36,3 +36,10 @@ test('summary reports how many player-coach duplicates were dropped', () => {
   const out = buildSummary({ plan: empty, dedupedCoaches: [{ name: '林哲瑄' }] })
   assert.match(out, /去重（球員兼教練，保留球員列）1：林哲瑄/)
 })
+
+test('keyField labels the link count and insert fallback (NPB prints npb_id, not cpbl_acnt)', () => {
+  const out = buildSummary({ plan: { ...empty, inserts: [{ npb_id: '99' }] }, links: [{ id: 1, key: '5' }], keyField: 'npb_id' })
+  assert.match(out, /補 npb_id 1/)
+  assert.match(out, /新增：99/)
+  assert.doesNotMatch(out, /cpbl_acnt/)
+})

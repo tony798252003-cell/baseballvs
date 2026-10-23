@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { loadEnv, createServiceClient } from './lib/env.mjs'
 import { fetchNpbRoster, parseNpbRoster } from './lib/npbClient.mjs'
 import { planRosterSync, checkSafetyValve } from './lib/rosterSync.mjs'
-import { matchUnkeyed } from './lib/playerMerge.mjs'
+import { matchNpbUnkeyed, filterNpbUpdates, dedupeByKey } from './lib/npbSync.mjs'
 import { buildSummary } from './lib/syncSummary.mjs'
 import { TEAMS } from '../src/constants/teams.js'
 
@@ -77,7 +77,8 @@ async function apply({ updates, inserts, departures }) {
 
 async function main() {
   console.log(`NPB 名單同步（${APPLY ? '--apply 寫入模式' : 'dry run，不寫入'}）\n`)
-  const { scraped, pageCounts } = await fetchRosters()
+  const { scraped: rawScraped, pageCounts } = await fetchRosters()
+  const scraped = dedupeByKey(rawScraped)
 
   const valve = checkSafetyValve(pageCounts, readPreviousCounts())
   if (!valve.ok) {
@@ -86,18 +87,21 @@ async function main() {
   }
 
   const dbPlayers = await fetchAllPlayers()
-  const { matches, ambiguous } = matchUnkeyed(dbPlayers, scraped, { org: 'NPB', keyField: 'npb_id' })
+  const { matches, ambiguous } = matchNpbUnkeyed(dbPlayers, scraped)
   const linkById = new Map(matches.map((m) => [m.id, m.key]))
   // 先綁上 npb_id，planner 才會把這些列當作既有列更新、而不是新增
   const linked = dbPlayers.map((r) => (linkById.has(r.id) ? { ...r, npb_id: linkById.get(r.id) } : r))
 
-  const plan = planRosterSync({ dbPlayers: linked, scraped, org: 'NPB', keyField: 'npb_id' })
+  const planned = planRosterSync({ dbPlayers: linked, scraped, org: 'NPB', keyField: 'npb_id' })
+  const plan = { ...planned, updates: filterNpbUpdates(planned.updates, linked) }
 
   const patches = new Map(plan.updates.map((u) => [u.id, { ...u.patch }]))
   for (const [id, key] of linkById) patches.set(id, { npb_id: key, ...patches.get(id) })
   const updates = [...patches].map(([id, patch]) => ({ id, patch }))
 
-  console.log(`\n${buildSummary({ plan, links: matches, ambiguous, pageCounts })}\n`)
+  console.log(`\n${buildSummary({ plan, links: matches, ambiguous, pageCounts, keyField: 'npb_id' })}\n`)
+  const unlinked = dbPlayers.filter((r) => r.org === 'NPB' && !r.npb_id && !r.is_coach && !linkById.has(r.id))
+  console.log(`未綁定的既有 NPB 列（比對後仍無對應，需人工決定）${unlinked.length}：${unlinked.map((r) => `${r.name}(${r.team}, id=${r.id})`).join('、') || '無'}\n`)
 
   if (!APPLY) {
     console.log('dry run 結束（未寫入）。加 --apply 才會寫入。')
