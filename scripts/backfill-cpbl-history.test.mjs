@@ -90,12 +90,12 @@ test('planBackfill: two scanned pages with one name + one unkeyed row -> ambiguo
   assert.deepEqual(plan.ambiguous[0].acnts, ['0000000001', '0000000002'])
 })
 
-test('planBackfill: unkeyed coach row is never auto-linked -> ambiguous', () => {
+test('planBackfill: a same-name unkeyed coach row is not linked or flagged; the retired player is inserted as its own departed row', () => {
   const found = [{ cpbl_acnt: '0000000001', name: '教練', isPlayer: true }]
   const plan = planBackfill(found, [{ id: 11, org: 'CPBL', name: '教練', cpbl_acnt: null, is_coach: true }])
   assert.deepEqual(plan.matches, [])
-  assert.deepEqual(plan.inserts, [])
-  assert.deepEqual(plan.ambiguous.map(a => a.candidates), [['11']])
+  assert.deepEqual(plan.ambiguous, [])
+  assert.deepEqual(plan.inserts.map(r => [r.name, r.status, r.cpbl_acnt]), [['教練', 'departed', '0000000001']])
 })
 
 const PERSON_HTML = '<div class="PlayerBrief"><div class="name">某人</div><dl><dd><span class="label">位置</span><span class="desc">投手</span></dd></dl></div>'

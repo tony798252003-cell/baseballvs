@@ -60,12 +60,11 @@ export function parseArgs(argv) {
 }
 
 // 把掃到的人分成：DB 已有（略過）、可與無 acnt 的舊資料配對（補 acnt）、需人工判斷（ambiguous）、全新（插入）
-// 只憑姓名辨識身分太弱，所以只在「掃到的頁面同名只有一個、未綁 acnt 的 DB 列同名也只有一列、且該列不是教練」時才自動配對
+// 只憑姓名辨識身分太弱，所以只在「掃到的頁面同名只有一個、未綁 acnt 的非教練 DB 列同名也只有一列」時才自動配對（教練列不參與，同名歷史球員另插新列）
 export function planBackfill(found, dbRows) {
   const known = new Set(dbRows.map(r => r.cpbl_acnt).filter(Boolean))
   const fresh = found.filter(f => !known.has(f.cpbl_acnt))
   const freshByName = Map.groupBy(fresh, f => f.name)
-  const rowById = new Map(dbRows.map(r => [String(r.id), r]))
   const { matches: rawMatches, ambiguous: rawAmbiguous } = matchUnkeyed(dbRows, fresh.map(f => ({ key: f.cpbl_acnt, name: f.name })), { org: 'CPBL', keyField: 'cpbl_acnt' })
 
   const ambiguous = new Map() // name -> { name, candidates, acnts }
@@ -74,7 +73,7 @@ export function planBackfill(found, dbRows) {
   const matches = []
   for (const m of rawMatches) {
     const name = fresh.find(f => f.cpbl_acnt === m.key).name
-    if (freshByName.get(name).length > 1 || rowById.get(String(m.id)).is_coach) flag(name, [String(m.id)])
+    if (freshByName.get(name).length > 1) flag(name, [String(m.id)])
     else matches.push(m)
   }
   const linked = new Set(matches.map(m => m.key))
