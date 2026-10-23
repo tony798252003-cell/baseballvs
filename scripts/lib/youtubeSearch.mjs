@@ -35,11 +35,34 @@ function parseViews(t) {
   return Math.round(n * mult)
 }
 
+// 從 `var ytInitialData = ` 後逐字元括號配對取出 JSON 物件（略過字串與跳脫字元）
+function extractInitialData(html) {
+  const marker = 'var ytInitialData = '
+  const at = html.indexOf(marker)
+  if (at < 0) throw new Error('ytInitialData not found')
+  const start = at + marker.length
+  let depth = 0
+  let inStr = false
+  for (let i = start; i < html.length; i++) {
+    const c = html[i]
+    if (inStr) {
+      if (c === '\\') i++
+      else if (c === '"') inStr = false
+    } else if (c === '"') inStr = true
+    else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return html.slice(start, i + 1)
+  }
+  throw new Error('ytInitialData is unterminated')
+}
+
 export function parseYoutubeResults(html) {
-  const m = /var ytInitialData = (\{.*?\});<\/script>/s.exec(html)
-  if (!m) return []
   let data
-  try { data = JSON.parse(m[1]) } catch { return [] }
+  try {
+    data = JSON.parse(extractInitialData(html))
+  } catch (e) {
+    if (e instanceof SyntaxError) throw new Error(`ytInitialData is not valid JSON: ${e.message}`)
+    throw e
+  }
   const out = []
   const walk = (o) => {
     if (Array.isArray(o)) return o.forEach(walk)
@@ -60,6 +83,26 @@ export function parseYoutubeResults(html) {
   return out
 }
 
+const IGNORED = /[．·・•]/
+const CJK = /[\u3400-\u9fff]/
+const NAME_SUFFIXES = ['應援', '登場', '登板']
+
+// 姓名比對忽略 ．·・• 與空白；後面不可緊接其他漢字（林立 不應命中 林立中），
+// 除非接的是應援類關鍵字。標題中的空白視為分隔（「陳鏞基 林立」是兩個人）。
+function titleHasName(title, name) {
+  const n = [...name].filter((c) => !IGNORED.test(c) && !/\s/.test(c)).join('')
+  const chars = [...title].filter((c) => !IGNORED.test(c))
+  const t = chars.filter((c) => !/\s/.test(c)).join('')
+  const afterIdx = chars.map((c, i) => (/\s/.test(c) ? null : i)).filter((i) => i !== null)
+  for (let i = t.indexOf(n); i >= 0; i = t.indexOf(n, i + 1)) {
+    const end = i + n.length
+    const next = chars[afterIdx[end - 1] + 1]
+    const rest = t.slice(end)
+    if (next === undefined || /\s/.test(next) || !CJK.test(next) || NAME_SUFFIXES.some((k) => rest.startsWith(k))) return true
+  }
+  return false
+}
+
 const has = (s, list) => list.find((k) => s.includes(k))
 
 export function rankCandidates(videos, { name, team, otherNames = [] }) {
@@ -67,7 +110,7 @@ export function rankCandidates(videos, { name, team, otherNames = [] }) {
   const seen = new Set()
   const ranked = []
   for (const v of videos) {
-    if (seen.has(v.videoId) || !v.title.includes(name)) continue
+    if (seen.has(v.videoId) || !titleHasName(v.title, name)) continue
     seen.add(v.videoId)
     const title = v.title.toLowerCase()
     const channel = v.channel.toLowerCase()
@@ -88,7 +131,7 @@ export function rankCandidates(videos, { name, team, otherNames = [] }) {
     const fan = has(title, FANCAM)
     const girls = has(title, GIRL_GROUPS) ?? has(channel, GIRL_GROUPS)
     if (fan || girls) add(-40, `cheerleader/fancam: ${fan ?? girls}`)
-    const others = otherNames.filter((n) => n !== name && v.title.includes(n))
+    const others = otherNames.filter((n) => n !== name && titleHasName(v.title, n))
     if (others.length >= 2 || has(title, COMPILATION)) add(-30, 'compilation')
     add(Math.round(4 * Math.log10(v.views + 1) * 10) / 10, 'views')
 
@@ -100,7 +143,7 @@ export function rankCandidates(videos, { name, team, otherNames = [] }) {
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 export async function searchPlayer({ name, team }, { fetchImpl = fetch, sleep = defaultSleep, otherNames } = {}) {
-  const queries = [`${name} 應援曲`, `${team} ${name} 應援曲`]
+  const queries = [`${team} ${name} 應援曲`, `${name} 應援曲`]
   const all = []
   for (let i = 0; i < queries.length; i++) {
     if (i > 0) await sleep(MIN_GAP_MS)
