@@ -70,11 +70,11 @@
 
             <!-- League filter -->
             <div class="flex gap-1 px-3 pt-2 flex-wrap flex-shrink-0">
-              <button v-for="l in ['一軍', '二軍', 'coach', 'all', 'departed']" :key="l"
+              <button v-for="l in ['一軍', '二軍', 'all', 'departed']" :key="l"
                 @click="pickerLeague = l; pickerTeam = null"
                 :class="['px-3 py-1 rounded-full text-xs font-bold border transition cursor-pointer',
                   pickerLeague === l ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300']">
-                {{ l === 'all' ? '全部' : l === 'coach' ? '教練' : l === 'departed' ? '離隊／歷史' : l }}
+                {{ l === 'all' ? '全部' : l === 'departed' ? '離隊／歷史' : l }}
               </button>
             </div>
 

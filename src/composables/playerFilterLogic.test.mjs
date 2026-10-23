@@ -7,6 +7,7 @@ const roster = [
   p('A', '中信兄弟'),
   p('B', '中信兄弟', { league: '二軍' }),
   p('C', '統一獅', { isCoach: true }),
+  p('前教練', '統一獅', { isCoach: true, status: 'departed' }),
   p('彭政閔', '中信兄弟', { status: 'departed', league: '一軍' }),
   p('老將', '興農牛', { status: 'departed', league: undefined }),
   p('D', '阪神虎'),
@@ -17,12 +18,18 @@ const names = (l, org, lg) => filterRosterByLeague(l, org, lg).map(x => x.name)
 test('active tabs never include departed players (離隊者不能被選進現役打線)', () => {
   assert.deepEqual(names(roster, 'CPBL', '一軍'), ['A'])
   assert.deepEqual(names(roster, 'CPBL', '二軍'), ['B'])
-  assert.deepEqual(names(roster, 'CPBL', 'coach'), ['C'])
-  assert.deepEqual(names(roster, 'CPBL', 'all'), ['A', 'B', 'C'])
+  assert.deepEqual(names(roster, 'CPBL', 'all'), ['A', 'B'])
 })
 
-test('departed tab ignores league/coach so defunct-team players appear', () => {
+test('departed tab ignores league so defunct-team players appear', () => {
   assert.deepEqual(names(roster, 'CPBL', 'departed'), ['彭政閔', '老將'])
+})
+
+// 使用者決定：教練暫時不能上場
+test('coaches never appear in any league option', () => {
+  for (const lg of ['一軍', '二軍', 'all', 'departed']) {
+    assert.ok(!names(roster, 'CPBL', lg).some(n => n === 'C' || n === '前教練'), lg)
+  }
 })
 
 test('org filter separates CPBL / NPB / MLB', () => {

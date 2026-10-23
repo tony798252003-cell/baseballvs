@@ -5,7 +5,7 @@ import { filterRosterByLeague, sortTeamsByTeamsOrder } from './playerFilterLogic
 // 球員過濾和計算 composable
 export function usePlayerFilters(roster, selectedTeam) {
   const selectedOrg = ref('CPBL') // 'CPBL' | 'NPB' | 'MLB'
-  const selectedLeague = ref('一軍') // '一軍' | '二軍' | 'coach' | 'all' | 'departed'
+  const selectedLeague = ref('一軍') // '一軍' | '二軍' | 'all' | 'departed'
 
   // 換聯盟時清掉已選球隊（舊球隊不屬於新聯盟）
   watch(selectedOrg, () => { selectedTeam.value = null })
