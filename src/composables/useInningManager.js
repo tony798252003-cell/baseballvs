@@ -59,7 +59,7 @@ export function useInningManager(gameState, showToast) {
 
   // 處理三出局（versus mode）
   const handleThreeOutsVersus = (callbacks) => {
-    const { playLineupIntro, speakBatterName, playBatterMusic, currentPlayer, showLineupIntro, introIndex, needHomeTeamIntro, isMuted, audioRef, teamChants } = callbacks
+    const { playLineupIntro, speakBatterName, playBatterMusic, currentPlayer, showLineupIntro, introIndex, needHomeTeamIntro, isMuted, audioRef, teamChants, genericChantUrl } = callbacks
 
     // 保存當前隊伍的下一個打者索引（三出局那個打者打完了，下次從下一棒開始）
     const nextBatterIndex = (currentBatterIndex.value + 1) % lineup.value.length
@@ -117,7 +117,7 @@ export function useInningManager(gameState, showToast) {
 
       if (audioRef.value) {
         setTimeout(() => {
-          playBatterMusic(currentPlayer.value, teamChants?.value || [])
+          playBatterMusic(currentPlayer.value, teamChants?.value || [], genericChantUrl?.value || '')
         }, 4000)
       }
     }

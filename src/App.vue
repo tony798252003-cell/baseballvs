@@ -107,7 +107,7 @@
       @toggle-mute="isMuted = !isMuted"
       @show-batter-select="showBatterSelect = true"
       @show-pitcher-select="showPitcherSelect = true"
-      @play-batter-music="playBatterMusic"
+      @play-batter-music="p => playBatterMusic(p, teamChants, genericChantUrl)"
       @add-ball="addBall"
       @add-strike="addStrike"
       @reset-count="balls = 0; strikes = 0"
@@ -984,6 +984,7 @@ const buildVersusCallbacks = () => ({
   isMuted,
   audioRef,
   teamChants,
+  genericChantUrl,
 })
 
 const benchRoster = computed(() => {
