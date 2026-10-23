@@ -10,7 +10,7 @@ test('keeps the row with an external id and copies missing manual fields into it
     row({ id: 1, cpbl_acnt: '0000001260', song: null }),
     row({ id: 2, cpbl_acnt: null, song: 'my song' }),
   ]
-  assert.deepEqual(planDuplicateMerges(rows), [{ keepId: 1, removeIds: ['2'], patch: { song: 'my song' } }])
+  assert.deepEqual(planDuplicateMerges(rows).merges, [{ keepId: 1, removeIds: ['2'], patch: { song: 'my song' } }])
 })
 
 test('does not overwrite a manual field the keep row already has', () => {
@@ -19,12 +19,12 @@ test('does not overwrite a manual field the keep row already has', () => {
     row({ id: 1, cpbl_acnt: 'A', song: 'keep me' }),
     row({ id: 2, song: 'other' }),
   ]
-  assert.deepEqual(planDuplicateMerges(rows)[0].patch, {})
+  assert.deepEqual(planDuplicateMerges(rows).merges[0].patch, {})
 })
 
 test('same name on different teams is not a duplicate', () => {
   // different people can share a name across teams
-  assert.deepEqual(planDuplicateMerges([row({ id: 1 }), row({ id: 2, team: '富邦悍將' })]), [])
+  assert.deepEqual(planDuplicateMerges([row({ id: 1 }), row({ id: 2, team: '富邦悍將' })]), { merges: [], ambiguous: [] })
 })
 
 test('groups after canonicalizing team names', () => {
@@ -33,7 +33,7 @@ test('groups after canonicalizing team names', () => {
     row({ id: 1, team: 'LA道奇', name: '某人', created_at: '2024-02-01' }),
     row({ id: 2, team: '洛杉磯道奇', name: '某人', created_at: '2024-01-01' }),
   ]
-  const plan = planDuplicateMerges(rows)
+  const plan = planDuplicateMerges(rows).merges
   assert.equal(plan.length, 1)
   assert.equal(plan[0].keepId, 2)
 })
@@ -41,7 +41,7 @@ test('groups after canonicalizing team names', () => {
 test('without an external id the oldest row is kept', () => {
   // oldest row is most likely the original entry
   const rows = [row({ id: 5, created_at: '2025-01-01' }), row({ id: 4, created_at: '2024-01-01' })]
-  assert.equal(planDuplicateMerges(rows)[0].keepId, 4)
+  assert.equal(planDuplicateMerges(rows).merges[0].keepId, 4)
 })
 
 test('empty array counts as empty for manual fields', () => {
@@ -50,7 +50,28 @@ test('empty array counts as empty for manual fields', () => {
     row({ id: 1, cpbl_acnt: 'A', other_positions: [] }),
     row({ id: 2, other_positions: ['游擊手'] }),
   ]
-  assert.deepEqual(planDuplicateMerges(rows)[0].patch, { other_positions: ['游擊手'] })
+  assert.deepEqual(planDuplicateMerges(rows).merges[0].patch, { other_positions: ['游擊手'] })
+})
+
+test('conflicting external ids are skipped and reported', () => {
+  // two different acnts means two different people sharing a name; merging would destroy one
+  const rows = [row({ id: 1, cpbl_acnt: 'A' }), row({ id: 2, cpbl_acnt: 'B' })]
+  assert.deepEqual(planDuplicateMerges(rows), {
+    merges: [],
+    ambiguous: [{ name: '郭俊麟', team: '統一獅', candidates: ['1', '2'] }],
+  })
+})
+
+test('external id on a removed row is copied into the keep row', () => {
+  // dropping the row that holds mlb_id would break later official-sync matching
+  const rows = [row({ id: 1, cpbl_acnt: 'A' }), row({ id: 2, mlb_id: '77' })]
+  assert.deepEqual(planDuplicateMerges(rows).merges[0].patch, { mlb_id: '77' })
+})
+
+test('emoji on the removed row survives into the keep patch', () => {
+  // emoji is hand-entered manual data and must not be lost with the deleted row
+  const rows = [row({ id: 1, cpbl_acnt: 'A' }), row({ id: 2, emoji: '🔥' })]
+  assert.deepEqual(planDuplicateMerges(rows).merges[0].patch, { emoji: '🔥' })
 })
 
 test('matchUnkeyed matches a single unkeyed db row by name', () => {

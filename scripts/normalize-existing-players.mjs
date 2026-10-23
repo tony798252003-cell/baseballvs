@@ -35,7 +35,8 @@ console.log(`Loaded ${players.length} players, ${chants.length} team_chants`)
 // (1)(2) normalize team + org, applied locally so the merge planner sees final values
 const playerUpdates = []
 for (const r of players) {
-  let team = r.team === OTHER_TEAM ? canonicalTeamName(r.original_team) : canonicalTeamName(r.team)
+  // 其他球隊 with no usable original_team: keep the current team rather than writing null
+  const team = r.team === OTHER_TEAM && r.original_team ? canonicalTeamName(r.original_team) : canonicalTeamName(r.team)
   const org = orgOfTeam(team) ?? r.org
   if (team === OTHER_TEAM || orgOfTeam(team) === undefined) {
     console.warn(`WARN unknown team for ${r.id} ${r.name}: team=${r.team} original_team=${r.original_team}`)
@@ -48,11 +49,6 @@ for (const r of players) {
   r.org = org
 }
 
-console.log(`\n== players: ${playerUpdates.length} rows to update ==`)
-for (const u of playerUpdates) {
-  console.log(`  #${u.id} ${u.name}: ${JSON.stringify(u.before)} -> ${JSON.stringify(u.patch)}`)
-}
-
 // (3) team_chants renames
 const chantUpdates = chants
   .map((c) => ({ id: c.id, name: c.name, from: c.team, to: canonicalTeamName(c.team) }))
@@ -61,7 +57,7 @@ console.log(`\n== team_chants: ${chantUpdates.length} rows to update ==`)
 for (const c of chantUpdates) console.log(`  ${c.id} ${c.name}: ${c.from} -> ${c.to}`)
 
 // (4) duplicate merges
-const merges = planDuplicateMerges(players)
+const { merges, ambiguous } = planDuplicateMerges(players)
 const byId = new Map(players.map((p) => [String(p.id), p]))
 console.log(`\n== duplicate merges: ${merges.length} groups ==`)
 for (const m of merges) {
@@ -69,6 +65,14 @@ for (const m of merges) {
   console.log(`  ${keep.name} (${keep.team}): keep #${m.keepId}, remove ${m.removeIds.map((i) => '#' + i).join(', ')}, patch ${JSON.stringify(m.patch)}`)
 }
 const removed = new Set(merges.flatMap((m) => m.removeIds))
+console.log(`\n== skipped (conflicting external ids, needs a human): ${ambiguous.length} groups ==`)
+for (const a of ambiguous) console.log(`  ${a.name} (${a.team}): candidates ${a.candidates.map((i) => '#' + i).join(', ')}`)
+
+const liveUpdates = playerUpdates.filter((u) => !removed.has(String(u.id)))
+console.log(`\n== players: ${liveUpdates.length} rows to update (excluding rows removed by merges) ==`)
+for (const u of liveUpdates) {
+  console.log(`  #${u.id} ${u.name}: ${JSON.stringify(u.before)} -> ${JSON.stringify(u.patch)}`)
+}
 console.log(`\nPlayers after apply: ${players.length - removed.size}`)
 
 if (!APPLY) {
@@ -77,8 +81,7 @@ if (!APPLY) {
 }
 
 // Writes: abort on first failure. Keep-row patch goes before any delete so manual fields can't be lost.
-for (const u of playerUpdates) {
-  if (removed.has(String(u.id))) continue
+for (const u of liveUpdates) {
   const { error } = await supabase.from('players').update(u.patch).eq('id', u.id)
   check(error, `update player ${u.id}`)
 }
