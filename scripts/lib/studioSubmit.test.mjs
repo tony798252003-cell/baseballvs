@@ -7,18 +7,20 @@ import { backupPathFor, createSubmitter, submitApproved } from './studioSubmit.m
 
 const card = (id, over = {}) => ({
   playerId: id, name: `卡片名${id}`, team: '卡片隊', status: 'resolved', original: `b/orig/${id}-v.mp3`,
-  integratedLufs: -10, durationSec: 30, A: 5, B: 20, fadeMs: 60, sliderDb: 2, withIntro: false, ...over,
+  integratedLufs: -9, segmentLufs: -10, segmentCut: { A: 5, B: 20 }, durationSec: 30, A: 5, B: 20, fadeMs: 60, sliderDb: 2,
+  withIntro: false, ...over,
 })
 const stateOf = (...cards) => ({ batch: 'b', cards: Object.fromEntries(cards.map((c) => [c.playerId, c])) })
 const dbRow = (id, over = {}) => ({ id: Number(id), name: `球員${id}`, team: '樂天桃猿', song: null, intro: null, ...over })
 
 const fakes = (db, over = {}) => {
-  const calls = { render: [], upload: [], writes: [], saves: 0, downloads: [] }
+  const calls = { render: [], upload: [], writes: [], saves: 0, downloads: [], measures: [] }
   return {
     calls,
     deps: {
       readPlayer: async (id) => db[id] ?? null,
       findNameConflict: async () => false,
+      measureSegment: async (orig, A, B) => { calls.measures.push([orig, A, B]); return -11 },
       render: async (opts) => {
         calls.render.push(opts)
         return { songPath: `${opts.outDir}/song.mp3`, introPath: opts.withIntro ? `${opts.outDir}/intro.mp3` : null }
@@ -37,7 +39,8 @@ const fakes = (db, over = {}) => {
 const opts = { studioDir: '/studio', backupDir: '/nonexistent-backup-dir' }
 
 test('happy path renders with the card cut and gain, names files from the DB row, writes song+intro only', async () => {
-  // Ruling 5: Dropbox names come from the current DB team/name, not the card's cached copy.
+  // Ruling 5: Dropbox names come from the current DB team/name, not the card's cached copy. Gain is from the
+  // fresh A→B segment LUFS (-10), not the whole original (-9), matching normalize-music's song-file basis.
   const state = stateOf(card('1', { withIntro: true }))
   const { calls, deps } = fakes({ 1: dbRow('1') })
   const summary = await submitApproved(state, deps, opts)
@@ -309,5 +312,32 @@ test('a failing preflight (no Dropbox token) rejects the submit before any rende
   // Rendering every card only to fail each upload wastes minutes and hides the real cause.
   const { calls, deps } = fakes({ 1: dbRow('1') }, { preflight: async () => { throw new Error('缺少 Dropbox 授權') } })
   await assert.rejects(submitApproved(stateOf(card('1')), deps, opts), /缺少 Dropbox 授權/)
+  assert.equal(calls.render.length, 0)
+})
+
+test('a stale segment LUFS (A/B moved after the measurement) is re-measured before the render and stored', async () => {
+  // Gain from the old cut's loudness would make the song miss the target that normalize-music checks.
+  const state = stateOf(card('1', { A: 6, segmentCut: { A: 5, B: 20 }, segmentLufs: -10 }))
+  const { calls, deps } = fakes({ 1: dbRow('1') })
+  await submitApproved(state, deps, opts)
+  assert.deepEqual(calls.measures, [['b/orig/1-v.mp3', 6, 20]])
+  assert.equal(calls.render[0].gainDb, -12 - -11 + 2)
+  assert.deepEqual([state.cards['1'].segmentLufs, state.cards['1'].segmentCut], [-11, { A: 6, B: 20 }])
+})
+
+test('a card never measured (only whole-file LUFS) gets its segment measured; a fresh one is not re-measured', async () => {
+  // Cards analysed before this change have no segmentLufs; the whole-file value is only the initial suggestion.
+  const state = stateOf(card('1', { segmentLufs: undefined, segmentCut: undefined }), card('2'))
+  const { calls, deps } = fakes({ 1: dbRow('1'), 2: dbRow('2') })
+  await submitApproved(state, deps, opts)
+  assert.deepEqual(calls.measures.map(([o]) => o), ['b/orig/1-v.mp3'])
+  assert.deepEqual(calls.render.map((r) => r.gainDb), [-12 - -11 + 2, -12 - -10 + 2])
+})
+
+test('a silent segment fails the card before render', async () => {
+  // -inf LUFS cannot give a gain; rendering anyway would produce a wrongly levelled file.
+  const { calls, deps } = fakes({ 1: dbRow('1') }, { measureSegment: async () => -Infinity })
+  const summary = await submitApproved(stateOf(card('1', { segmentCut: undefined })), deps, opts)
+  assert.match(summary.failed[0].error, /量測 A→B 響度失敗/)
   assert.equal(calls.render.length, 0)
 })

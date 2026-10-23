@@ -1,5 +1,5 @@
 // 應援曲工作台卡片頁：讀 /api/state 畫卡片，拖拉 A/B 微調（沿用試驗頁），Web Audio 預覽＝成品的切點、淡入淡出與增益。
-import { clampCut, compressorMakeupDb, cutToSave, fadeSec, previewGainDb, submitNames } from './logic.js'
+import { clampCut, compressorMakeupDb, cutToSave, fadeSec, previewGainDb, previewLufs, submitNames } from './logic.js'
 
 const STATUS_LABEL = { pending: '待處理', resolved: '✅ 已解決', skipped: '⏭ 跳過', notfound: '找不到', error: '錯誤' }
 const LIMIT_DB = -1
@@ -23,8 +23,12 @@ const fmtDb = (d) => `${d > 0 ? '+' : ''}${d.toFixed(1)} dB`
 const mediaUrl = (rel) => `/media/${rel.split('/').map(encodeURIComponent).join('/')}`
 const needsWork = (c) => c.status === 'pending' && !c.original
 const isProcessing = (c) => latest?.processing === c.playerId
-// Server data plus the processing flag: a change in either re-renders the card.
-const cardKey = (c) => `${JSON.stringify(c)}${isProcessing(c) ? '#processing' : ''}`
+// Server data plus the processing flag: a change in either re-renders the card. Segment loudness results are
+// left out and patched in place (refresh), so a measurement finishing does not stop playback or rebuild the card.
+const SEGMENT_KEYS = ['segmentLufs', 'segmentCut', 'segmentError']
+const cardKey = (c) => `${JSON.stringify({ ...c, segmentLufs: undefined, segmentCut: undefined, segmentError: undefined })}${isProcessing(c) ? '#processing' : ''}`
+// The server still has to measure this card's saved cut (keeps the page polling until it has).
+const segmentPending = (c) => !!c.original && c.status !== 'error' && previewLufs(c, c).pending
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : {
@@ -209,7 +213,9 @@ function createView(card) {
     ${card.original && card.status !== 'error' ? '<div class="tunebox"><p class="dim">載入原曲…</p></div>' : ''}
     ${isProcessing(card) || card.uploaded ? '' : actionsHtml(card)}`
 
-  view.gainDb = () => previewGainDb({ targetLufs, integratedLufs: card.integratedLufs, sliderDb: view.st.sliderDb })
+  // Gain basis follows the cut on screen: 量測中 until the server has measured exactly that cut.
+  view.lufsInfo = () => previewLufs(view.card, cutToSave(view.st, view.card.durationSec))
+  view.gainDb = () => previewGainDb({ targetLufs, integratedLufs: view.lufsInfo().lufs, sliderDb: view.st.sliderDb })
 
   // ---- actions ----
   el.querySelectorAll('[data-act]').forEach((btn) => { btn.onclick = () => runAction(view, btn.dataset.act) })
@@ -309,7 +315,8 @@ function bindTune(view) {
     q('.xf').value = st.fadeMs
     q('.xfv').textContent = `${st.fadeMs} ms`
     q('.vol').value = st.sliderDb
-    q('.volv').textContent = `${fmtDb(st.sliderDb)}（總增益 ${fmtDb(view.gainDb())}）`
+    const measuring = !locked && view.lufsInfo().pending ? '　量測中…' : ''
+    q('.volv').textContent = `${fmtDb(st.sliderDb)}（總增益 ${fmtDb(view.gainDb())}${measuring}）`
     q('.intro').checked = st.withIntro
     q('.full').style.display = (locked ? view.intro : st.withIntro) ? '' : 'none'
   }
@@ -348,6 +355,7 @@ function bindTune(view) {
   function edited(seam) {
     clamp()
     view.drawAll()
+    showValues() // the moved cut is not measured yet: 量測中
     queueSave(view)
     if (seam) playSeam()
   }
@@ -411,10 +419,14 @@ function bindTune(view) {
   })
   q('.xf').oninput = () => { st.fadeMs = Number(q('.xf').value); showValues(); queueSave(view) }
   q('.xf').onchange = () => playSeam()
+  // Also called by refresh when a segment measurement arrives: new gain applies to the playing preview too.
+  view.showValues = () => {
+    showValues()
+    if (player.view === view && !locked) player.vol.gain.setTargetAtTime(10 ** (view.gainDb() / 20), ctx.currentTime, 0.02)
+  }
   q('.vol').oninput = () => {
     st.sliderDb = Number(q('.vol').value)
-    showValues()
-    if (player.view === view) player.vol.gain.setTargetAtTime(10 ** (view.gainDb() / 20), ctx.currentTime, 0.02)
+    view.showValues()
     queueSave(view)
   }
   q('.intro').onchange = () => { st.withIntro = q('.intro').checked; showValues(); queueSave(view) }
@@ -452,6 +464,7 @@ async function flushSave(view) {
     view.serverKey = cardKey(card)
     view.saveError = null
     view.msg('✓ 已儲存', 'ok')
+    if (segmentPending(card)) schedulePoll() // pick up the server's A→B measurement
   } catch (e) {
     view.saveError = e.message
     view.msg(`儲存失敗：${e.message}`, 'bad')
@@ -526,6 +539,10 @@ async function refresh() {
     if (!views.size) document.getElementById('cards').textContent = ''
     for (const card of s.cards) {
       const v = views.get(card.playerId)
+      if (v) {
+        for (const k of SEGMENT_KEYS) v.card[k] = card[k]
+        v.showValues?.()
+      }
       if (v && v.serverKey === cardKey(card)) continue
       // Don't clobber a card the user is editing, or one edited after this request went out (stale response).
       if (v && (v.dragging || v.dirty || v.saving || v.saveError || v.lastEdit > startedAt)) continue
@@ -538,16 +555,40 @@ async function refresh() {
   } finally {
     refreshing = false
   }
+  const busy = latest && (latest.processing || latest.queued?.length || latest.cards.some((c) => needsWork(c) || segmentPending(c)))
+  if (busy || !latest) schedulePoll()
+}
+
+function schedulePoll() {
   clearTimeout(pollTimer)
-  const busy = latest && (latest.processing || latest.queued?.length || latest.cards.some(needsWork))
-  if (busy || !latest) pollTimer = setTimeout(refresh, POLL_MS)
+  pollTimer = setTimeout(refresh, POLL_MS)
+}
+
+// Saves every pending debounced edit (and waits for in-flight ones) so the submit renders what is on screen.
+async function flushAllSaves() {
+  for (const v of views.values()) {
+    if (v.saveError && v.dirty && !v.saving && !v.saveTimer) await flushSave(v) // one more try for a failed save
+    while (v.saving || v.saveTimer) {
+      if (v.saving) await new Promise((r) => setTimeout(r, 50))
+      else {
+        clearTimeout(v.saveTimer)
+        await flushSave(v)
+      }
+    }
+  }
+  return [...views.values()].filter((v) => v.saveError)
 }
 
 document.getElementById('filter').onchange = applyFilter
 
 document.getElementById('submit').onclick = async () => {
-  const names = submitNames([...views.values()].map((v) => v.card))
   const out = document.getElementById('summary')
+  const unsaved = await flushAllSaves()
+  if (unsaved.length) {
+    out.innerHTML = `<div class="box err">有 ${unsaved.length} 張卡片的修改沒存成功，請先處理再送出：${esc(unsaved.map((v) => `${v.card.team} - ${v.card.name}`).join('、'))}</div>`
+    return
+  }
+  const names = submitNames([...views.values()].map((v) => v.card))
   if (!names.length) { out.innerHTML = '<div class="box">沒有尚未上傳的已解決卡片。</div>'; return }
   if (!confirm(`將產生成品、上傳 Dropbox 並寫入資料庫，共 ${names.length} 筆：\n\n${names.join('\n')}\n\n確定送出？`)) return
   const btn = document.getElementById('submit')

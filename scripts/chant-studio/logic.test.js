@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clampCut, compressorMakeupDb, cutToSave, fadeSec, previewGainDb, submitNames } from './logic.js'
+import { clampCut, compressorMakeupDb, cutToSave, fadeSec, previewGainDb, previewLufs, submitNames } from './logic.js'
 
 // A B dragged to the very end must not round up past the duration, or the server rejects every save.
 test('cutToSave keeps B at or below a non-whole-ms duration', () => {
@@ -55,4 +55,12 @@ test('submitNames lists resolved cards that are not uploaded', () => {
     { team: 'T', name: '丙', status: 'pending' },
   ]
   assert.deepEqual(submitNames(cards), ['T - 甲'])
+})
+
+// Preview must level by the same A→B loudness the submit renders with; the whole-file value is only a stand-in.
+test('previewLufs uses segmentLufs ?? integratedLufs and is pending until this exact cut was measured', () => {
+  const card = { integratedLufs: -9, segmentLufs: -11, segmentCut: { A: 5, B: 20 } }
+  assert.deepEqual(previewLufs(card, { A: 5, B: 20 }), { lufs: -11, pending: false })
+  assert.deepEqual(previewLufs(card, { A: 5.01, B: 20 }), { lufs: -11, pending: true })
+  assert.deepEqual(previewLufs({ integratedLufs: -9 }, { A: 5, B: 20 }), { lufs: -9, pending: true })
 })

@@ -20,14 +20,15 @@ import { suggestCut } from './lib/cutSuggest.mjs'
 import { STUDIO_DIR, batchName, loadState, mergePlayers, saveState } from './lib/studioState.mjs'
 import { createSubmitter, submitApproved } from './lib/studioSubmit.mjs'
 import {
-  applyCardEdit, checkRequest, chooseNextCandidate, mediaPath, nextCardId, retryCard, runPipeline, safeJoin, selectPlayers,
-  useCustomUrl,
+  applyCardEdit, checkRequest, chooseNextCandidate, ensureSegmentLufs, mediaPath, needsSegmentMeasure, nextCardId, retryCard,
+  runPipeline, safeJoin, selectPlayers, useCustomUrl,
 } from './lib/studioPipeline.mjs'
 
 const PAGE_DIR = fileURLToPath(new URL('./chant-studio/', import.meta.url))
 const ANALYSIS_RATE = 11025
 const SEARCH_GAP_MS = 1600
 const MAX_BODY = 64 * 1024
+const MEASURE_DELAY_MS = 500
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
@@ -123,6 +124,27 @@ async function analyze(rel) {
   return { integratedLufs, durationSec, suggestion }
 }
 
+// ---- A→B 段落響度（增益基準）：切點變動後稍等再量，一次一張，量到最新切點為止 ----
+const measureSegment = async (rel, A, B) => (await measureLoudness(join(STUDIO_DIR, rel), { start: A, end: B })).integratedLufs
+let measureTimer = null
+let measuring = false
+function scheduleMeasure() {
+  clearTimeout(measureTimer)
+  measureTimer = setTimeout(measureSegments, MEASURE_DELAY_MS)
+}
+async function measureSegments() {
+  if (measuring) return scheduleMeasure() // the running loop may already be past this card; look again afterwards
+  measuring = true
+  try {
+    for (let c; (c = Object.values(state.cards).find(needsSegmentMeasure));) {
+      try { await ensureSegmentLufs(c, measureSegment) } catch (e) { console.warn(`段落響度量測失敗 ${c.name}：${e.message}`) }
+      save(state)
+    }
+  } finally {
+    measuring = false
+  }
+}
+
 // ---- 依序處理（一次一張），使用者的 換版本／貼網址／重試 先排 ----
 const queue = []
 let processing = null
@@ -130,7 +152,7 @@ let running = false
 function kick() {
   if (running) return
   running = true
-  runPipeline(state, { search, download, analyze, save }, { queue, onStart: (id) => { processing = id; console.log(`… ${state.cards[id].name}`) } })
+  runPipeline(state, { search, download, analyze, save: (s) => { save(s); scheduleMeasure() } }, { queue, onStart: (id) => { processing = id; console.log(`… ${state.cards[id].name}`) } })
     .catch((e) => console.error('pipeline stopped:', e))
     .finally(() => {
       running = false
@@ -164,6 +186,7 @@ const submitter = createSubmitter(async (onStart) => {
     readPlayer,
     findNameConflict,
     writePlayer,
+    measureSegment,
     render: renderPair,
     remoteExists: async (remote) => dropboxPathExists(await getDropboxAccessToken(), remote),
     downloadRemote: async (remote, local) => downloadFromDropbox(await getDropboxAccessToken(), remote, local),
@@ -247,7 +270,7 @@ async function handle(req, res) {
     if (m[2]) {
       queue.push(m[1])
       kick()
-    }
+    } else if (needsSegmentMeasure(card)) scheduleMeasure()
     return sendJson(res, 200, card)
   }
 
@@ -263,4 +286,5 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`應援曲工作台：${url}（批次 ${batch}，${Object.keys(state.cards).length} 張卡片）`)
   if (!args['no-open']) spawn('open', [url], { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
   kick()
+  scheduleMeasure() // cards analysed before segment loudness existed, or edited while the server was down
 })

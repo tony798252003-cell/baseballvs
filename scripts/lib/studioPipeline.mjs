@@ -85,6 +85,41 @@ export async function runPipeline(state, deps, { queue = [], onStart } = {}) {
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v)
 
+// Gain basis = integrated LUFS of the song segment A→B of the original (what normalize-music measures on
+// the song file). segmentCut is the {A, B} it was measured for; a different cut makes it stale.
+const SEGMENT_KEYS = ['segmentLufs', 'segmentCut', 'segmentError']
+export const segmentFresh = (card) => !!card.segmentCut && card.segmentCut.A === card.A && card.segmentCut.B === card.B
+
+// Cards whose segment loudness should be (re)measured in the background.
+export const needsSegmentMeasure = (card) => !!card.original && card.status !== 'error' && num(card.A) && num(card.B) && !segmentFresh(card)
+
+/**
+ * Returns the segment LUFS for the card's current cut, measuring it first when missing or stale
+ * (measure(original, A, B) -> integrated LUFS). The result is stored only if the cut did not change meanwhile.
+ * Throws for a segment that cannot be measured (silent/unreadable), like the whole-file analysis.
+ */
+export async function ensureSegmentLufs(card, measure) {
+  if (!segmentFresh(card)) {
+    const { original, A, B } = card
+    let lufs
+    let error
+    try {
+      lufs = await measure(original, A, B)
+      if (!num(lufs)) throw new Error(`段落響度為 ${lufs}（無聲或無法讀取）`)
+    } catch (e) {
+      error = e.message
+    }
+    if (card.original === original && card.A === A && card.B === B) {
+      for (const k of SEGMENT_KEYS) delete card[k]
+      Object.assign(card, { segmentCut: { A, B } }, error ? { segmentError: error } : { segmentLufs: lufs })
+    }
+    if (error) throw new Error(`量測 A→B 響度失敗：${error}`)
+    return lufs
+  }
+  if (card.segmentError) throw new Error(`量測 A→B 響度失敗：${card.segmentError}`)
+  return card.segmentLufs
+}
+
 // Validates a partial edit against the card; applies it and returns null, or returns an error message unchanged.
 export function applyCardEdit(card, body) {
   const next = { A: card.A, B: card.B, fadeMs: card.fadeMs, sliderDb: card.sliderDb, withIntro: card.withIntro, status: card.status }
@@ -106,7 +141,7 @@ export function applyCardEdit(card, body) {
 
 // Clears the download/analysis so the pipeline processes the card again; keeps fade/slider preferences.
 function resetForReprocess(card) {
-  for (const k of ['original', 'integratedLufs', 'durationSec', 'suggestion', 'A', 'B', 'error']) delete card[k]
+  for (const k of ['original', 'integratedLufs', 'durationSec', 'suggestion', 'A', 'B', 'error', ...SEGMENT_KEYS]) delete card[k]
   card.withIntro = false
   card.status = 'pending'
 }

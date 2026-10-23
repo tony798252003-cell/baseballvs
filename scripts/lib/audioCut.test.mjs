@@ -183,6 +183,20 @@ test('integration: rendered song/intro decode to exact cut lengths and peaks sta
     }
   })
 
+  // The studio gain uses the A→B loudness (what normalize-music later measures on the song file), not the whole file.
+  await t.test('measureLoudness with start/end measures only that segment', async () => {
+    const wav = join(dir, 'quiet-then-loud.wav')
+    const r = spawnSync(findBinary('ffmpeg'), ['-hide_banner', '-y', '-f', 'lavfi', '-i',
+      'aevalsrc=if(lt(t\\,10)\\,0.2\\,0.5)*sin(2*PI*440*t):s=44100:d=30', '-ac', '2', '-c:a', 'pcm_s16le', wav])
+    assert.equal(r.status, 0, r.stderr?.toString())
+    const whole = (await measureLoudness(wav)).integratedLufs
+    const loud = (await measureLoudness(wav, { start: 10, end: 30 })).integratedLufs
+    const quiet = (await measureLoudness(wav, { start: 0, end: 10 })).integratedLufs
+    // 0.5 vs 0.2 amplitude = 8 dB; the quiet intro (inside the -10 LU gate) pulls the whole-file value down.
+    assert.ok(Math.abs(loud - quiet - 8) < 0.5, `loud ${loud} quiet ${quiet}`)
+    assert.ok(loud > whole + 1, `segment ${loud} vs whole ${whole}`)
+  })
+
   // Whole-file re-encode of an existing song must keep its length (no added delay/padding).
   await t.test('whole-file re-encode keeps duration', async () => {
     const out = join(dir, 'whole.mp3')

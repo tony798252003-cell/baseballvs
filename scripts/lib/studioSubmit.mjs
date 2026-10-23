@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { computeGainDb } from './audioCut.mjs'
 import { STUDIO_DIR } from './studioState.mjs'
+import { ensureSegmentLufs } from './studioPipeline.mjs'
 
 const DROPBOX_DIR = '/Music/Players'
 const BACKUP_ROOT = '/Users/tonywang/orca/workspaces/baseballvs/backups'
@@ -28,13 +29,14 @@ const unsafeNamePart = (s) => typeof s !== 'string' || !s || s.includes('/') || 
  * card.uploadedPaths) is downloaded into backupDir first; a failed backup fails the card without uploading.
  * deps: preflight() (throws to abort the whole submit before any render, e.g. no Dropbox token),
  *       readPlayer(id) -> row|null, findNameConflict(row) -> boolean (another row with the same team+name
- *       already has song/intro), render(renderPair opts), remoteExists(dropboxPath) -> boolean,
+ *       already has song/intro), measureSegment(originalRel, A, B) -> LUFS (used when the card's stored
+ *       segmentLufs is missing or stale), render(renderPair opts), remoteExists(dropboxPath) -> boolean,
  *       downloadRemote(dropboxPath, localPath), upload(localPath, dropboxPath), link(dropboxPath) -> url,
  *       writePlayer(id, patch) -> rows written (the caller writes only while every patched column is still empty),
  *       save(state), log(msg)
  */
 export async function submitApproved(state, {
-  preflight = async () => {}, readPlayer, findNameConflict, render, remoteExists, downloadRemote, upload, link, writePlayer, save,
+  preflight = async () => {}, readPlayer, findNameConflict, measureSegment, render, remoteExists, downloadRemote, upload, link, writePlayer, save,
   log = () => {},
 }, { studioDir = STUDIO_DIR, backupDir = defaultBackupDir(), busyId = null, onStart } = {}) {
   await preflight()
@@ -78,13 +80,15 @@ export async function submitApproved(state, {
       // Same team+name means the same Dropbox path: uploading would overwrite the other player's file.
       if (await findNameConflict(player)) throw new Error('同隊同名球員已有檔案，未上傳')
       let introTaken = card.withIntro && !isEmpty(player.intro)
+      // Gain from the A→B segment (re-measured if the cut changed since the last measurement); intro uses the same gain.
+      const segmentLufs = await ensureSegmentLufs(card, measureSegment)
       const { songPath, introPath } = await render({
         src: join(studioDir, card.original),
         outDir: join(studioDir, state.batch, 'render', id),
         A: card.A,
         B: card.B,
         fadeMs: card.fadeMs,
-        gainDb: computeGainDb({ integratedLufs: card.integratedLufs, sliderDb: card.sliderDb }),
+        gainDb: computeGainDb({ integratedLufs: segmentLufs, sliderDb: card.sliderDb }),
         withIntro: card.withIntro && !introTaken,
       })
       const songRemote = `${DROPBOX_DIR}/${label}.mp3`

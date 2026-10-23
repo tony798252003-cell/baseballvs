@@ -19,6 +19,13 @@ export function cutToSave({ A, B }, durationSec) {
   return { A: a, B: b }
 }
 
+// Gain basis for a cut {A, B} (saved ms values): the A→B segment LUFS (segmentLufs ?? integratedLufs, the
+// whole-file value only until a segment was measured); pending while the server has not measured this cut.
+export function previewLufs(card, cut) {
+  const sc = card.segmentCut
+  return { lufs: card.segmentLufs ?? card.integratedLufs, pending: !(sc && sc.A === cut.A && sc.B === cut.B) }
+}
+
 export function previewGainDb({ targetLufs, integratedLufs, sliderDb }) {
   return Math.min(MAX_GAIN_DB, Math.max(-MAX_GAIN_DB, targetLufs - integratedLufs + sliderDb))
 }

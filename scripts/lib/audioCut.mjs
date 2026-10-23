@@ -71,8 +71,11 @@ export function parseEbur128(stderr) {
   return { integratedLufs: num(i[1]), truePeakDb: num(p[1]) }
 }
 
-export async function measureLoudness(file) {
-  const { stderr } = await runFfmpeg(['-nostats', '-i', file, '-vn', '-af', 'ebur128=peak=true:framelog=quiet', '-f', 'null', '-'])
+// Whole file, or only start→end seconds (cut on the decoded timeline exactly like buildRenderArgs).
+export async function measureLoudness(file, { start, end } = {}) {
+  const trim = start == null ? [] : ['asetpts=PTS-STARTPTS', `atrim=start=${start}:end=${end}`, 'asetpts=PTS-STARTPTS']
+  const af = [...trim, 'ebur128=peak=true:framelog=quiet'].join(',')
+  const { stderr } = await runFfmpeg(['-nostats', '-i', file, '-vn', '-af', af, '-f', 'null', '-'])
   return parseEbur128(stderr)
 }
 

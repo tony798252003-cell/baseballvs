@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   selectPlayers, runPipeline, nextCardId, applyCardEdit, youtubeVideoId,
   chooseNextCandidate, useCustomUrl, retryCard, safeJoin, checkRequest, mediaPath,
+  ensureSegmentLufs, needsSegmentMeasure, segmentFresh,
 } from './studioPipeline.mjs'
 
 const row = (over = {}) => ({
@@ -229,4 +230,35 @@ test('mediaPath serves only a batch\'s originals and renders (not state files or
   for (const bad of ['b1.json', 'b2/orig/x.mp3', 'b1/other/x.mp3', 'b1/orig/../../b2.json', 'b1/orig/']) {
     assert.equal(mediaPath('/data', 'b1', bad), null, bad)
   }
+})
+
+test('segment LUFS is stale once A or B moves, and a new download clears it', () => {
+  // The gain must follow the cut actually rendered; a new original makes the old measurement meaningless.
+  const c = card('1', { original: 'b/orig/1-v.mp3', durationSec: 30, A: 5, B: 20, segmentCut: { A: 5, B: 20 }, segmentLufs: -10, candidates: [{ videoId: 'a' }, { videoId: 'b' }] })
+  assert.equal(segmentFresh(c), true)
+  assert.equal(needsSegmentMeasure(c), false)
+  applyCardEdit(c, { B: 21 })
+  assert.equal(segmentFresh(c), false)
+  assert.equal(needsSegmentMeasure(c), true)
+  chooseNextCandidate(c)
+  assert.deepEqual([c.segmentLufs, c.segmentCut], [undefined, undefined])
+})
+
+test('ensureSegmentLufs does not store a measurement for a cut that changed while it ran', async () => {
+  // A drag during the ffmpeg run would otherwise mark the old cut's loudness as fresh for the new cut.
+  const c = card('1', { original: 'o.mp3', A: 5, B: 20 })
+  const lufs = await ensureSegmentLufs(c, async () => { c.A = 6; return -10 })
+  assert.equal(lufs, -10)
+  assert.equal(c.segmentCut, undefined)
+  assert.equal(needsSegmentMeasure({ ...c, durationSec: 30 }), true)
+})
+
+test('ensureSegmentLufs records a failed (silent) measurement so the background loop does not retry it forever', async () => {
+  // A permanently silent segment would otherwise be re-measured in a tight loop.
+  const c = card('1', { original: 'o.mp3', A: 5, B: 20 })
+  await assert.rejects(ensureSegmentLufs(c, async () => -Infinity), /量測 A→B 響度失敗/)
+  assert.equal(needsSegmentMeasure(c), false)
+  let calls = 0
+  await assert.rejects(ensureSegmentLufs(c, async () => { calls++; return -10 }), /無聲/)
+  assert.equal(calls, 0)
 })
