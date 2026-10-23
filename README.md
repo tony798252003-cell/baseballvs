@@ -54,6 +54,8 @@ node scripts/backfill-cpbl-history.mjs [--apply] [--limit N] [--start N] [--prog
 node scripts/normalize-existing-players.mjs [--apply]
 ```
 
+注意：`scripts/restore-songs.mjs` 與 `scripts/migrate-legacy-songs.mjs` 是舊的一次性工具，以姓名比對球員且未分頁（超過 1000 筆會漏），請勿用於現有資料。
+
 ## 技術棧
 
 - Vue 3 (Composition API)

@@ -476,7 +476,13 @@ const musicStatusPlayers = computed(() => {
 
 async function loadData() {
   // 載入 DB 球員
-  dbPlayers.value = await fetchAllPages(() => supabase.from('players').select('id, name, number, team, main_position, song, emoji, intro, other_positions').order('team').order('name').order('id'))
+  try {
+    dbPlayers.value = await fetchAllPages(() => supabase.from('players').select('id, name, number, team, main_position, song, emoji, intro, other_positions').order('team').order('name').order('id'))
+  } catch (error) {
+    console.error('載入球員資料失敗:', error)
+    showToast('❌ 載入失敗')
+    return
+  }
 
   // 載入嗆斯曲
   const { data: chants } = await supabase.from('team_chants').select('*').order('team').order('name')
