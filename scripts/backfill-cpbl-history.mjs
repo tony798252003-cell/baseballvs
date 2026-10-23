@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { loadEnv, createServiceClient } from './lib/env.mjs'
 import { createCpblSession, parsePersonPage } from './lib/cpblClient.mjs'
 import { matchUnkeyed } from './lib/playerMerge.mjs'
+import { canonicalTeamName } from '../src/constants/teams.js'
 import { fetchAllPages } from '../src/lib/fetchAllPages.js'
 
 export const DEFAULT_PROGRESS = 'scripts/.cache/cpbl-history-progress.json'
@@ -44,9 +45,12 @@ export function advanceState(state, id, person) {
   }
 }
 
-// 缺值欄位保持省略（DB default 生效）；isPlayer:false（教練/工作人員）→ is_coach:true
+// 缺值欄位保持省略（insert 時用 defaultToNull:false，DB default 生效）；isPlayer:false（教練/工作人員）→ is_coach:true
+// number 為 NOT NULL 且無 default → 缺值時填 ''；team 再正規化一次（進度檔可能是加入簡稱別名前掃的）
 export function buildRow({ isPlayer, ...parsed }) {
-  return { org: 'CPBL', status: 'departed', ...parsed, is_coach: !isPlayer }
+  const row = { org: 'CPBL', status: 'departed', ...parsed, number: parsed.number ?? '', is_coach: !isPlayer }
+  if (row.team !== undefined) row.team = canonicalTeamName(row.team)
+  return row
 }
 
 export function parseArgs(argv) {
@@ -65,8 +69,11 @@ export function parseArgs(argv) {
 }
 
 // 把掃到的人分成：DB 已有（略過）、可與無 acnt 的舊資料配對（補 acnt）、需人工判斷（ambiguous）、全新（插入）
-// 只憑姓名辨識身分太弱，所以只在「掃到的頁面同名只有一個、未綁 acnt 的非教練 DB 列同名也只有一列」時才自動配對（教練列不參與，同名歷史球員另插新列）
-export function planBackfill(found, dbRows) {
+// 只憑姓名辨識身分太弱，所以只在「掃到的頁面同名只有一個、未綁 acnt 的非教練 DB 列同名也只有一列、且隊名（正規化後）相同」時才自動配對
+// （教練列不參與，同名歷史球員另插新列；同名不同隊 → 待人工判斷）
+// dbRows 須含所有聯盟：別聯盟的列帶同一個 acnt 也算 DB 已有
+export function planBackfill(rawFound, dbRows) {
+  const found = [...new Map(rawFound.map(f => [f.cpbl_acnt, f])).values()] // 續跑重掃可能有重複 acnt
   const known = new Set(dbRows.map(r => r.cpbl_acnt).filter(Boolean))
   const fresh = found.filter(f => !known.has(f.cpbl_acnt))
   const freshByName = Map.groupBy(fresh, f => f.name)
@@ -76,9 +83,11 @@ export function planBackfill(found, dbRows) {
   const flag = (name, candidates) => ambiguous.set(name, { name, candidates, acnts: freshByName.get(name).map(f => f.cpbl_acnt) })
   for (const a of rawAmbiguous) flag(a.name, a.candidates)
   const matches = []
+  const dbById = new Map(dbRows.map(r => [r.id, r]))
+  const sameTeam = (a, b) => a != null && b != null && canonicalTeamName(a) === canonicalTeamName(b)
   for (const m of rawMatches) {
-    const name = fresh.find(f => f.cpbl_acnt === m.key).name
-    if (freshByName.get(name).length > 1) flag(name, [String(m.id)])
+    const f = fresh.find(f => f.cpbl_acnt === m.key)
+    if (freshByName.get(f.name).length > 1 || !sameTeam(f.team, dbById.get(m.id).team)) flag(f.name, [String(m.id)])
     else matches.push(m)
   }
   const linked = new Set(matches.map(m => m.key))
@@ -141,7 +150,7 @@ async function main() {
 
   loadEnv()
   const supabase = createServiceClient()
-  const dbRows = await fetchAllPages(() => supabase.from('players').select('id, name, org, cpbl_acnt, is_coach').eq('org', 'CPBL').order('id'))
+  const dbRows = await fetchAllPages(() => supabase.from('players').select('id, name, org, team, cpbl_acnt, is_coach').order('id'))
   const maxDbAcnt = maxAcnt(dbRows)
   const ctx = { session: await createCpblSession(), createSession: createCpblSession, sleep }
 
@@ -193,7 +202,7 @@ async function main() {
     if (error) throw error
   }
   for (let i = 0; i < plan.inserts.length; i += INSERT_BATCH) {
-    const { error } = await supabase.from('players').insert(plan.inserts.slice(i, i + INSERT_BATCH))
+    const { error } = await supabase.from('players').insert(plan.inserts.slice(i, i + INSERT_BATCH), { defaultToNull: false })
     if (error) throw error
     console.log(`inserted ${Math.min(i + INSERT_BATCH, plan.inserts.length)}/${plan.inserts.length}`)
   }

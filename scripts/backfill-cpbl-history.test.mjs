@@ -36,10 +36,20 @@ test('shouldStop only after 300 consecutive invalid ids; a valid id restarts the
   assert.equal(shouldStop(s), true)
 })
 
-test('buildRow: staff become coaches, players do not; missing fields stay omitted', () => {
-  assert.deepEqual(buildRow({ cpbl_acnt: '1', name: 'A', isPlayer: true }), { org: 'CPBL', status: 'departed', cpbl_acnt: '1', name: 'A', is_coach: false })
+test('buildRow: staff become coaches, players do not; missing optional fields stay omitted', () => {
+  assert.deepEqual(buildRow({ cpbl_acnt: '1', name: 'A', number: '7', isPlayer: true }), { org: 'CPBL', status: 'departed', cpbl_acnt: '1', name: 'A', number: '7', is_coach: false })
   assert.equal(buildRow({ cpbl_acnt: '2', name: 'B', isPlayer: false }).is_coach, true)
-  assert.equal('number' in buildRow({ cpbl_acnt: '1', name: 'A', isPlayer: true }), false)
+  assert.equal('team' in buildRow({ cpbl_acnt: '1', name: 'A', isPlayer: true }), false)
+})
+
+// players.number 是 NOT NULL 且沒有 default：缺背號的那一筆會讓整批 insert 失敗
+test('buildRow: missing number becomes empty string', () => {
+  assert.equal(buildRow({ cpbl_acnt: '1', name: 'A', isPlayer: true }).number, '')
+})
+
+// 進度檔裡的隊名可能是加別名前掃到的簡稱，寫入前要轉成正式隊名
+test('buildRow: header abbreviation from an old progress file is canonicalized', () => {
+  assert.equal(buildRow({ cpbl_acnt: '1', name: 'A', team: '兄弟', isPlayer: true }).team, '兄弟象')
 })
 
 test('parseArgs: defaults, flags, and rejects bad input', () => {
@@ -53,13 +63,13 @@ test('parseArgs: defaults, flags, and rejects bad input', () => {
 test('planBackfill: skips known acnt, links same-name unkeyed row, defers duplicate-name rows, inserts the rest', () => {
   const found = [
     { cpbl_acnt: '0000000001', name: '已有', isPlayer: true },
-    { cpbl_acnt: '0000000002', name: '舊資料', isPlayer: true },
+    { cpbl_acnt: '0000000002', name: '舊資料', team: '兄弟', isPlayer: true },
     { cpbl_acnt: '0000000003', name: '同名', isPlayer: true },
     { cpbl_acnt: '0000000004', name: '全新', isPlayer: false },
   ]
   const db = [
     { id: 10, org: 'CPBL', name: '已有', cpbl_acnt: '0000000001' },
-    { id: 11, org: 'CPBL', name: '舊資料', cpbl_acnt: null },
+    { id: 11, org: 'CPBL', name: '舊資料', team: '兄弟象', cpbl_acnt: null },
     { id: 12, org: 'CPBL', name: '同名', cpbl_acnt: null },
     { id: 13, org: 'CPBL', name: '同名', cpbl_acnt: null },
   ]
@@ -136,4 +146,29 @@ test('shouldStop: a 300-invalid gap below the highest Acnt already in the DB doe
 test('maxAcnt: highest numeric cpbl_acnt, ignoring null rows', () => {
   assert.equal(maxAcnt([{ cpbl_acnt: '0000007880' }, { cpbl_acnt: null }, { cpbl_acnt: '0000000012' }]), 7880)
   assert.equal(maxAcnt([]), 0)
+})
+
+// spec 2.5：只憑同名就綁 acnt 會把不同人合併；同名不同隊要人工判斷
+test('planBackfill: same name but different team is ambiguous, not linked or inserted', () => {
+  const found = [{ cpbl_acnt: '0000000002', name: '舊資料', team: '統一獅', isPlayer: true }]
+  const plan = planBackfill(found, [{ id: 11, org: 'CPBL', name: '舊資料', team: '中信兄弟', cpbl_acnt: null, is_coach: false }])
+  assert.deepEqual(plan.matches, [])
+  assert.deepEqual(plan.inserts, [])
+  assert.deepEqual(plan.ambiguous, [{ name: '舊資料', candidates: ['11'], acnts: ['0000000002'] }])
+})
+
+// acnt 不分聯盟：別聯盟的列已有這個 acnt 就是同一人，不可再插一筆
+test('planBackfill: acnt already held by a row of another org counts as known', () => {
+  const found = [{ cpbl_acnt: '0000000001', name: '旅外', team: '兄弟', isPlayer: true }]
+  const plan = planBackfill(found, [{ id: 10, org: 'MLB', name: '旅外', team: '紐約洋基', cpbl_acnt: '0000000001' }])
+  assert.equal(plan.skipped, 1)
+  assert.deepEqual(plan.inserts, [])
+})
+
+// 用 --start 續跑重掃同一段會在進度檔裡留下重複 acnt，不能因此插兩筆
+test('planBackfill: duplicate acnt in found is planned once', () => {
+  const f = { cpbl_acnt: '0000000001', name: '新', team: '兄弟', isPlayer: true }
+  const plan = planBackfill([f, { ...f }], [])
+  assert.equal(plan.inserts.length, 1)
+  assert.deepEqual(plan.ambiguous, [])
 })
