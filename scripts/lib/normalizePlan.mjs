@@ -115,11 +115,12 @@ export function lookupTargets(allRefs) {
 }
 
 /**
- * actions: the selected, planned actions; lookups: Map key -> { path } | { unresolvable } | { error } for
+ * actions: the selected, planned actions; lookups: Map key -> { path, displayPath } | { unresolvable } | { error } for
  * every lookupTargets key. Any { error } (rate limit after retries, 5xx, network) means the conflict check
  * is incomplete, so --apply must abort: returned in abort. A selected file that is unresolvable or whose
  * path is behind another link fails (failures: key -> reason). Unresolvable unselected files are listed
- * in ignored (dead links cannot collide with a path we upload to).
+ * in ignored (dead links cannot collide with a path we upload to). pathOf (path_lower) is the conflict and
+ * ledger key; uploadPathOf (path_display) is where the file is uploaded.
  */
 export function evaluateLookups(actions, lookups) {
   const selected = new Set(actions.map((a) => a.key))
@@ -133,10 +134,12 @@ export function evaluateLookups(actions, lookups) {
   for (const key of selected) if (!lookups.has(key)) abort.push(`${key}: 未查詢路徑`)
   const resolved = [...lookups].filter(([, r]) => r.path).map(([key, r]) => ({ key, path: r.path }))
   const pathOf = new Map(resolved.map((r) => [r.key, r.path]))
+  // Upload target: path_display keeps the file's case (path_lower would rename e.g. Players/ to players/).
+  const uploadPathOf = new Map([...lookups].filter(([, r]) => r.path).map(([key, r]) => [key, r.displayPath ?? r.path]))
   for (const key of pathConflicts(resolved)) {
     if (selected.has(key)) failures.set(key, `Dropbox 路徑 ${pathOf.get(key)} 被多個不同連結引用`)
   }
-  return { abort, failures, ignored, pathOf }
+  return { abort, failures, ignored, pathOf, uploadPathOf }
 }
 
 const unitOf = (r) => (r.kind === 'song' || r.kind === 'intro' ? `p:${r.ownerId}` : `f:${linkKey(r.url)}`)
@@ -184,6 +187,16 @@ export function selectRefs(refs, { only, limit } = {}) {
 // full apply, so they count as 'done'. 'uploaded' means interrupted between upload and DB update.
 export function ledgerStateOf(entry) {
   return entry ? entry.state ?? 'done' : undefined
+}
+
+// Dry-run view of the ledger (paths are not looked up there): link key -> state, for the link each entry
+// was applied under and the new link it was relinked to (the DB now references that one).
+export function ledgerStateByLink(ledger) {
+  const out = new Map()
+  for (const e of Object.values(ledger.applied)) {
+    for (const k of [e.key, e.newUrl && linkKey(e.newUrl)]) if (k) out.set(k, ledgerStateOf(e))
+  }
+  return out
 }
 
 export function median(values) {

@@ -22,7 +22,7 @@ import { TARGET_LUFS, decodeDurationSec, measureLoudness, renderWithSharedCeilin
 import { getDropboxAccessToken, getSharedLinkRawUrl, uploadToDropbox } from './lib/dropboxMusicSync.mjs'
 import { lookupPaths } from './lib/sharedLinkPath.mjs'
 import {
-  backupFileName, evaluateLookups, fileActions, ledgerStateOf, linkKey, lookupTargets, median, planNormalization, renderGroups, selectRefs,
+  backupFileName, evaluateLookups, fileActions, ledgerStateByLink, ledgerStateOf, linkKey, lookupTargets, median, planNormalization, renderGroups, selectRefs,
 } from './lib/normalizePlan.mjs'
 
 const BACKUP_ROOT = '/Users/tonywang/orca/workspaces/baseballvs/backups'
@@ -165,7 +165,7 @@ async function applyGroups(groups, allRefs, measured, workDir, ledger, backupDir
   const targets = lookupTargets(allRefs)
   const lookups = await lookupPaths(token, targets, { onProgress: (n, total) => process.stdout.write(`\r查 Dropbox 路徑 ${n}/${total}`) })
   process.stdout.write('\n')
-  const { abort, failures, ignored, pathOf } = evaluateLookups(actions, lookups)
+  const { abort, failures, ignored, pathOf, uploadPathOf } = evaluateLookups(actions, lookups)
   for (const { key, reason } of ignored) console.log(`  （未選取、無法解析，略過衝突檢查）${targets.get(key)} — ${reason}`)
   if (abort.length) {
     throw new Error(`查 Dropbox 路徑有 ${abort.length} 筆失敗，路徑衝突檢查不完整，中止 --apply（未上傳任何檔案）：\n  ${abort.join('\n  ')}`)
@@ -217,14 +217,15 @@ async function applyGroups(groups, allRefs, measured, workDir, ledger, backupDir
         }
       }
       for (const { a, out } of cuts) {
-        const path = pathOf.get(a.key)
-        await uploadToDropbox(token, out, path)
+        const path = pathOf.get(a.key) // path_lower: ledger key
+        const uploadPath = uploadPathOf.get(a.key) // path_display: keeps the file's case in Dropbox
+        await uploadToDropbox(token, out, uploadPath)
         ledger.applied[path] = {
           state: 'uploaded', key: a.key, url: a.url, gainDb: a.gainDb, backup: measured.get(a.key).file, backupDir,
           appliedAt: new Date().toISOString(),
         }
         writeJson(LEDGER_PATH, ledger)
-        const newUrl = await getSharedLinkRawUrl(token, path)
+        const newUrl = await getSharedLinkRawUrl(token, uploadPath)
         const changed = linkKey(newUrl) !== a.key
         if (changed) for (const ref of a.refs) await updateReference(ref, newUrl)
         Object.assign(ledger.applied[path], { state: 'done', newUrl: changed ? newUrl : undefined })
@@ -293,11 +294,12 @@ async function main() {
   console.log(`備份：${backupDir}（${backedUp}/${urlByKey.size} 個檔案，manifest.json）`)
 
   const ledger = readJson(LEDGER_PATH, { applied: {} })
-  const ledgerState = new Map(Object.values(ledger.applied).map((e) => [e.key, ledgerStateOf(e)]))
+  // Dry run has no Dropbox paths (no API lookups), so 已套用／需人工 here is judged by link; --apply decides by resolved path.
+  const ledgerState = ledgerStateByLink(ledger)
   const plan = planNormalization(refs.map((r) => ({ ...r, lufs: measured.get(r.key).lufs })), TARGET_LUFS)
   const groups = renderGroups(fileActions(plan))
   const actions = groups.flat()
-  console.log('\n目前響度    增益      檔案 / 引用')
+  console.log('\n目前響度    增益      檔案 / 引用（已套用／需人工：以連結判斷，--apply 時改以 Dropbox 路徑判斷）')
   for (const a of actions) {
     const m = measured.get(a.key)
     const state = ledgerState.get(a.key)

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   planNormalization, fileActions, renderGroups, pathConflicts, selectRefs, linkKey, median, toSharedLinkUrl, backupFileName,
-  lookupTargets, evaluateLookups, ledgerStateOf,
+  lookupTargets, evaluateLookups, ledgerStateOf, ledgerStateByLink,
 } from './normalizePlan.mjs'
 
 const T = -14
@@ -228,6 +228,18 @@ test('a ledger entry without state counts as done; uploaded stays needs-human', 
   assert.equal(ledgerStateOf({ key: 'k' }), 'done')
   assert.equal(ledgerStateOf({ key: 'k', state: 'uploaded' }), 'uploaded')
   assert.equal(ledgerStateOf(undefined), undefined)
+})
+
+test('dry-run ledger view also matches the relinked URL of an applied file', () => {
+  // After a relink the DB holds the new link; --apply (by path) skips it, so dry run must not show it as pending.
+  const ledger = { applied: {
+    '/music/a.mp3': { key: linkKey(L('a')), state: 'done', newUrl: L('a2', 'rlkey=N&raw=1') },
+    '/music/b.mp3': { key: linkKey(L('b')), state: 'uploaded' },
+  } }
+  const m = ledgerStateByLink(ledger)
+  assert.equal(m.get(linkKey(L('a'))), 'done')
+  assert.equal(m.get(linkKey(L('a2', 'rlkey=N'))), 'done')
+  assert.equal(m.get(linkKey(L('b'))), 'uploaded')
 })
 
 test('median of song LUFS ignores unmeasurable values and averages the middle pair', () => {

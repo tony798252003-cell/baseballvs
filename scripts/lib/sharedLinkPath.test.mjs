@@ -32,7 +32,7 @@ test('a 429 is retried after Retry-After and then resolves', async () => {
   // Dropbox rate-limits bursts; one 429 must not turn into a failed (or aborted) apply.
   const slept = []
   const { impl, calls } = fakeFetch([res(429, 'too_many_requests', { 'retry-after': '2' }), res(200, { path_lower: '/music/x.mp3' })])
-  const path = await sharedLinkPath('t', URL_A, { fetchImpl: impl, sleep: async (ms) => slept.push(ms) })
+  const { path } = await sharedLinkPath('t', URL_A, { fetchImpl: impl, sleep: async (ms) => slept.push(ms) })
   assert.equal(path, '/music/x.mp3')
   assert.equal(calls.length, 2)
   assert.deepEqual(slept, [2000])
@@ -73,4 +73,26 @@ test('lookups are spaced out so ~200 calls do not burst the API', async () => {
   const { impl } = fakeFetch(() => res(200, { path_lower: '/p' }))
   await lookupPaths('t', new Map([['a', URL_A], ['b', URL_B]]), { fetchImpl: impl, sleep: async (ms) => slept.push(ms) })
   assert.deepEqual(slept, [100])
+})
+
+test('a 409 shared_link_access_denied is unresolvable (listed), not an abort; a 429 still aborts', async () => {
+  // A private/foreign link cannot be uploaded to nor collide with our paths; only transient failures hide conflicts.
+  const sleep = async () => {}
+  const actions = [{ key: '/scl/fi/a?rlkey=K' }]
+  const targets = new Map([['/scl/fi/a?rlkey=K', URL_A], ['/scl/fi/b?rlkey=K', URL_B]])
+  const denied = fakeFetch((u) => (u.includes('/a/') ? res(200, { path_lower: '/music/x.mp3' }) : res(409, { error_summary: 'shared_link_access_denied/..' })))
+  const ok = evaluateLookups(actions, await lookupPaths('t', targets, { fetchImpl: denied.impl, sleep }))
+  assert.deepEqual(ok.abort, [])
+  assert.deepEqual(ok.ignored.map((i) => i.key), ['/scl/fi/b?rlkey=K'])
+  const limited = fakeFetch((u) => (u.includes('/a/') ? res(200, { path_lower: '/music/x.mp3' }) : res(429, 'too_many_requests')))
+  assert.equal(evaluateLookups(actions, await lookupPaths('t', targets, { fetchImpl: limited.impl, sleep })).abort.length, 1)
+})
+
+test('upload path keeps path_display case while conflicts/ledger use path_lower', async () => {
+  // Uploading to path_lower would recreate the file under a lower-cased name/folder in Dropbox.
+  const { impl } = fakeFetch(() => res(200, { path_lower: '/music/players/a b.mp3', path_display: '/Music/Players/A B.mp3' }))
+  const lookups = await lookupPaths('t', new Map([['k', URL_A]]), { fetchImpl: impl, sleep: async () => {} })
+  const { pathOf, uploadPathOf } = evaluateLookups([{ key: 'k' }], lookups)
+  assert.equal(pathOf.get('k'), '/music/players/a b.mp3')
+  assert.equal(uploadPathOf.get('k'), '/Music/Players/A B.mp3')
 })

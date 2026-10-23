@@ -62,7 +62,7 @@ node scripts/normalize-existing-players.mjs [--apply]
 
 ### Dropbox 一次性授權
 
-1. 到 Dropbox App Console 開啟權限：`files.content.read`、`files.content.write`、`sharing.read`、`sharing.write`
+1. 在 Dropbox App Console 建立的 App 存取類型必須是「Full Dropbox」（不是 App folder，否則找不到 `/Music/Players/`），並開啟權限：`files.content.read`、`files.content.write`、`sharing.read`、`sharing.write`
 2. 在 `.env` 填入 `DROPBOX_APP_KEY`、`DROPBOX_APP_SECRET`
 3. 執行 `node scripts/dropbox-auth.mjs`，開啟（或複製）印出的授權網址，把取得的 code 貼回終端機；腳本會把 `DROPBOX_REFRESH_TOKEN` 寫進 `.env`
 
@@ -81,12 +81,15 @@ node scripts/chant-studio.mjs --team <隊名> [--team …] [--league 一軍|二�
 - `--cookies-from-browser <瀏覽器>`：yt-dlp 下載時使用該瀏覽器的 cookies
 - `--no-open`：啟動後不自動開啟瀏覽器
 
+工作台網頁請用 Chrome 開啟（預覽與波形以 Chrome 的 Web Audio 行為校正）。
+
 流程：
 
 - 每位球員一張卡片，自動搜尋、下載並建議 A/B 剪點
 - 可調整 A/B 剪點、淡入淡出、音量
 - 每張卡片可按 ✅ 已解決、🔄 換版本、⏭ 跳過，或貼上自己的網址
-- 📤 送出：渲染成品、上傳 Dropbox `/Music/Players/`，只在該球員 song 仍為空時才寫入資料庫
+- 📤 送出：渲染成品、上傳 Dropbox `/Music/Players/`，只在該球員 song 仍為空時才寫入資料庫；同路徑已有別的檔案時，先備份到 `/Users/tonywang/orca/workspaces/baseballvs/backups/studio-<日期>/` 再覆蓋
+- 增益依原曲 A→B 段落的響度計算（與舊歌音量統一量測成品檔的基準一致），改切點後會自動重新量測
 
 資料目錄：`/Users/tonywang/orca/workspaces/baseballvs/chant-studio/`。需安裝 yt-dlp（`uv tool install yt-dlp`）與 ffmpeg。
 

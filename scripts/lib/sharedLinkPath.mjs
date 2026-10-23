@@ -1,5 +1,5 @@
 // scripts/lib/sharedLinkPath.mjs
-// Dropbox shared link -> path_lower, with retry, used by scripts/normalize-music.mjs --apply.
+// Dropbox shared link -> path_lower / path_display, with retry, used by scripts/normalize-music.mjs --apply.
 import { toSharedLinkUrl } from './normalizePlan.mjs'
 
 const API = 'https://api.dropboxapi.com/2/sharing/get_shared_link_metadata'
@@ -13,9 +13,14 @@ const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // with a path we upload to.
 export class LinkNotResolvable extends Error {}
 
+// 409 tags of get_shared_link_metadata that say this link is not usable (dead, private, wrong type).
+// Any other 409 tag is unknown and still aborts.
+const UNUSABLE_LINK_TAGS = ['shared_link_not_found', 'shared_link_access_denied', 'unsupported_link_type']
+
 /**
  * Retries 429/5xx/network errors (honouring Retry-After) up to MAX_ATTEMPTS.
- * Throws LinkNotResolvable for 404 / shared_link_not_found / no path_lower; any other error is thrown as is.
+ * Returns { path: path_lower (conflict/ledger key), displayPath: path_display (upload target, keeps case) }.
+ * Throws LinkNotResolvable for 404 / an unusable-link 409 / no path_lower; any other error is thrown as is.
  */
 export async function sharedLinkPath(token, url, { fetchImpl = fetch, sleep = defaultSleep } = {}) {
   for (let attempt = 1; ; attempt++) {
@@ -34,10 +39,10 @@ export async function sharedLinkPath(token, url, { fetchImpl = fetch, sleep = de
     if (res.ok) {
       const meta = await res.json()
       if (!meta.path_lower) throw new LinkNotResolvable('分享連結沒有路徑（檔案不在此 Dropbox 帳號內？）')
-      return meta.path_lower
+      return { path: meta.path_lower, displayPath: meta.path_display ?? meta.path_lower }
     }
     const body = await res.text()
-    if (res.status === 404 || (res.status === 409 && body.includes('shared_link_not_found'))) {
+    if (res.status === 404 || (res.status === 409 && UNUSABLE_LINK_TAGS.some((t) => body.includes(t)))) {
       throw new LinkNotResolvable(`分享連結已失效 ${res.status}`)
     }
     if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
@@ -50,7 +55,7 @@ export async function sharedLinkPath(token, url, { fetchImpl = fetch, sleep = de
 }
 
 /**
- * Looks up every key sequentially with a small gap. Returns Map key -> { path } | { unresolvable } | { error }.
+ * Looks up every key sequentially with a small gap. Returns Map key -> { path, displayPath } | { unresolvable } | { error }.
  */
 export async function lookupPaths(token, urlByKey, { fetchImpl = fetch, sleep = defaultSleep, onProgress = () => {} } = {}) {
   const out = new Map()
@@ -59,7 +64,7 @@ export async function lookupPaths(token, urlByKey, { fetchImpl = fetch, sleep = 
     if (n++) await sleep(LOOKUP_GAP_MS)
     onProgress(n, urlByKey.size)
     try {
-      out.set(key, { path: await sharedLinkPath(token, url, { fetchImpl, sleep }) })
+      out.set(key, await sharedLinkPath(token, url, { fetchImpl, sleep }))
     } catch (e) {
       out.set(key, e instanceof LinkNotResolvable ? { unresolvable: e.message } : { error: e.message })
     }

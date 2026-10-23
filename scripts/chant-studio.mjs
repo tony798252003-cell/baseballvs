@@ -96,7 +96,7 @@ async function download(card, { videoId, url }) {
   const rel = `${batch}/orig/${card.playerId}-${videoId}.mp3`
   const dir = join(STUDIO_DIR, batch, 'orig')
   mkdirSync(dir, { recursive: true })
-  const argv = ['-x', '--audio-format', 'mp3', '--ffmpeg-location', findBinary('ffmpeg'),
+  const argv = ['-x', '--audio-format', 'mp3', '--audio-quality', '0', '--ffmpeg-location', findBinary('ffmpeg'),
     '-o', join(dir, `${card.playerId}-${videoId}.%(ext)s`)]
   if (cookies) argv.push('--cookies-from-browser', cookies)
   argv.push(url)
