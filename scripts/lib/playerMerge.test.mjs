@@ -87,3 +87,20 @@ test('matchUnkeyed reports duplicate unkeyed names as ambiguous', () => {
   const r = matchUnkeyed(db, [{ name: '林子豪', key: '5' }], { org: 'NPB', keyField: 'npb_id' })
   assert.deepEqual(r, { matches: [], ambiguous: [{ name: '林子豪', candidates: ['1', '2'] }] })
 })
+
+const wu = [
+  { id: 2277, org: 'CPBL', name: '吳承翰', team: '台鋼雄鷹', is_coach: true, cpbl_acnt: null },
+  { id: 2905, org: 'CPBL', name: '吳承翰', team: '味全龍', is_coach: false, cpbl_acnt: '0000007311' },
+]
+
+test('matchUnkeyed never links a scraped key that another db row already holds', () => {
+  // a coach and a player share the name 吳承翰; relinking would hit the unique constraint (or merge two people)
+  const r = matchUnkeyed(wu, [{ name: '吳承翰', key: '0000007311' }], { org: 'CPBL', keyField: 'cpbl_acnt' })
+  assert.deepEqual(r, { matches: [], ambiguous: [] })
+})
+
+test('matchUnkeyed never links a keyed scraped row onto a coach row', () => {
+  // coach rows have no external id; planRosterSync matches them by name + is_coach instead
+  const r = matchUnkeyed([wu[0]], [{ name: '吳承翰', key: '0000007311' }], { org: 'CPBL', keyField: 'cpbl_acnt' })
+  assert.deepEqual(r, { matches: [], ambiguous: [] })
+})

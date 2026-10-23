@@ -40,13 +40,15 @@ export function planDuplicateMerges(rows) {
   return { merges, ambiguous }
 }
 
-// scraped: [{ name, key }]. Only unkeyed db rows of the org are candidates.
+// scraped: [{ name, key }]. Only unkeyed, non-coach db rows of the org are candidates (coaches are
+// matched by name in planRosterSync); a key already held by any db row is never re-linked.
 export function matchUnkeyed(dbRows, scraped, { org, keyField }) {
-  const unkeyed = dbRows.filter((r) => r.org === org && (r[keyField] == null || r[keyField] === ''))
+  const unkeyed = dbRows.filter((r) => r.org === org && (r[keyField] == null || r[keyField] === '') && !r.is_coach)
+  const takenKeys = new Set(dbRows.filter((r) => r[keyField] != null && r[keyField] !== '').map((r) => String(r[keyField])))
   const matches = []
   const ambiguous = []
   for (const s of scraped) {
-    if (s.key == null) continue
+    if (s.key == null || takenKeys.has(String(s.key))) continue
     const hits = unkeyed.filter((r) => r.name === s.name)
     if (hits.length === 1) matches.push({ id: hits[0].id, key: s.key })
     else if (hits.length > 1) ambiguous.push({ name: s.name, candidates: hits.map((r) => String(r.id)) })
