@@ -381,6 +381,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { supabase } from '../lib/supabase.js'
+import { fetchAllPages } from '../lib/fetchAllPages.js'
 import AdminLogin from './AdminLogin.vue'
 
 const emit = defineEmits(['back'])
@@ -466,8 +467,7 @@ const musicStatusPlayers = computed(() => {
 
 async function loadData() {
   // 載入 DB 球員
-  const { data } = await supabase.from('players').select('id, name, number, team, main_position, song, emoji, intro, other_positions').order('team').order('name')
-  dbPlayers.value = data || []
+  dbPlayers.value = await fetchAllPages(() => supabase.from('players').select('id, name, number, team, main_position, song, emoji, intro, other_positions').order('team').order('name').order('id'))
 
   // 載入嗆斯曲
   const { data: chants } = await supabase.from('team_chants').select('*').order('team').order('name')

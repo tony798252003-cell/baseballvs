@@ -197,6 +197,7 @@ import { useGameInitialization } from './composables/useGameInitialization.js'
 import { useInningManager } from './composables/useInningManager.js'
 import { useGameStats } from './composables/useGameStats.js'
 import { TEXTS } from './constants/texts.js'
+import { TEAMS } from './constants/teams.js'
 import { 
   PlayIcon, 
   RotateCcwIcon, 
@@ -256,11 +257,11 @@ const {
   isLoading,
   loadError,
   selectedTeam,
-  teamLogos,
-  CPBL_TEAMS,
-  loadCSVFromURL,
-  normalizeTeamName
+  loadCSVFromURL
 } = playerData
+
+// 球隊 logo 對照（name → logo），供選隊元件使用
+const teamLogos = Object.fromEntries(TEAMS.filter(t => t.logo).map(t => [t.name, t.logo]))
 
 // 解構 audio
 const { audioRef, playBatterMusic, stopMusic } = audio

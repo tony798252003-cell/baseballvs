@@ -34,7 +34,7 @@
         
         <div class="flex items-center justify-center gap-1 sm:gap-2 mb-0.5 flex-wrap overflow-hidden">
           <div class="text-xs sm:text-sm md:text-base lg:text-lg font-bold text-blue-600">#{{ player.number }}</div>
-          <div class="text-xs sm:text-sm md:text-base text-gray-700 font-semibold truncate max-w-[100px] sm:max-w-[120px] md:max-w-[150px]">{{ player.originalTeam }}</div>
+          <div class="text-xs sm:text-sm md:text-base text-gray-700 font-semibold truncate max-w-[100px] sm:max-w-[120px] md:max-w-[150px]">{{ player.team }}</div>
         </div>
         
         <div class="flex items-center justify-center gap-1 flex-wrap overflow-hidden">

@@ -14,7 +14,7 @@
         </div>
         <div class="text-5xl font-black text-yellow-300 mb-2">{{ currentPlayer.name }}</div>
         <div class="text-3xl text-orange-400 font-bold mb-2">#{{ currentPlayer.number }}</div>
-        <div class="text-2xl text-cyan-300 font-bold mb-2">{{ currentPlayer.originalTeam }}</div>
+        <div class="text-2xl text-cyan-300 font-bold mb-2">{{ currentPlayer.team }}</div>
         <div class="text-2xl text-green-300 font-bold">{{ currentPlayer.mainPosition }}</div>
       </div>
     </div>

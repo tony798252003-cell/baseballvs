@@ -12,15 +12,15 @@
         <div class="flex items-center">
           <div :class="[
             'font-bold leading-tight flex-shrink-0 mr-1',
-            player.name.length > 5 ? 'text-xs sm:text-sm lg:text-base' : 'text-sm sm:text-base lg:text-lg'
+            lineupName(player.name).length > 5 ? 'text-xs sm:text-sm lg:text-base' : 'text-sm sm:text-base lg:text-lg'
           ]">
             {{ index + 1 }}
           </div>
           <div :class="[
             'font-bold leading-tight flex-1 text-center',
-            player.name.length > 5 ? 'text-xs sm:text-sm lg:text-base break-words' : 'text-sm sm:text-base lg:text-lg truncate'
+            lineupName(player.name).length > 5 ? 'text-xs sm:text-sm lg:text-base break-words' : 'text-sm sm:text-base lg:text-lg truncate'
           ]">
-            {{ player.name }}
+            {{ lineupName(player.name) }}
           </div>
         </div>
       </div>
@@ -29,6 +29,8 @@
 </template>
 
 <script setup>
+import { lineupName } from '../lib/playerName.js'
+
 defineProps({
   lineup: {
     type: Array,
