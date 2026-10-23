@@ -6,7 +6,8 @@
 // node scripts/normalize-music.mjs --apply         dry run 全部步驟後，重新編碼（V0、gapless、−1 dBTP）並同路徑覆蓋上傳；
 //                                                  分享連結若改變則更新資料庫引用
 // 試跑單檔：--only <球員 id 或分享連結>（球員 id ＝該球員的循環版＋前奏版）、--limit <n>（前 n 個單位，
-//          一位球員的循環版＋前奏版算一個單位）。可與上面任一模式併用。
+//          一位球員的循環版＋前奏版算一個單位）。可與上面任一模式併用。選取範圍會自動擴大到「同一檔案的
+//          所有引用」與「同一球員的另一半」，直到不再變動，所以增益一致性檢查與連結更新都看得到全貌。
 //
 // 備份：/Users/tonywang/orca/workspaces/baseballvs/backups/music-<YYYY-MM-DD>/（含 manifest.json，逐檔寫入）。
 // 可重複執行：備份檔已存在就不重下載（同一天 --apply 後再跑也不會被新檔蓋掉；重編碼一律以備份原檔為來源），
@@ -163,24 +164,31 @@ async function updateReference(ref, newUrl) {
   if (!data?.length) throw new Error(`資料庫引用已變動，未更新 ${ref.kind} ${ref.ownerId}`)
 }
 
-// Uploads nothing until every action's Dropbox path is resolved and checked for collisions; each render
-// group (a player's song + intro) is rendered with one shared limiter ceiling and uploaded as a unit.
-async function applyGroups(groups, measured, workDir, ledger, backupDir) {
+// Uploads nothing until the Dropbox path of EVERY referenced file (selected or not, planned or skipped)
+// is resolved and checked for collisions; each render group (a player's song + intro) is rendered with
+// one shared limiter ceiling and uploaded as a unit.
+// Ledger entries: state 'uploaded' right after the upload, 'done' after the relink/DB update. A later run
+// treats 'done' as applied and 'uploaded' (interrupted between upload and DB update) as needs-human.
+async function applyGroups(groups, allUrlByKey, measured, workDir, ledger, backupDir) {
   const token = await getDropboxAccessToken()
   mkdirSync(workDir, { recursive: true })
   const failures = new Map() // key -> reason
   const pathOf = new Map()
   const actions = groups.flat()
+  const selectedKeys = new Set(actions.map((a) => a.key))
 
-  for (const a of actions) {
+  let n = 0
+  for (const [key, url] of allUrlByKey) {
+    process.stdout.write(`\r查 Dropbox 路徑 ${++n}/${allUrlByKey.size}`)
     try {
-      pathOf.set(a.key, await sharedLinkPath(token, a.url))
+      pathOf.set(key, await sharedLinkPath(token, url))
     } catch (e) {
-      failures.set(a.key, e.message)
+      if (selectedKeys.has(key)) failures.set(key, e.message)
     }
   }
-  const conflicts = pathConflicts(actions.filter((a) => pathOf.has(a.key)).map((a) => ({ action: a, path: pathOf.get(a.key) })))
-  for (const key of conflicts) failures.set(key, `Dropbox 路徑 ${pathOf.get(key)} 被多個不同連結引用`)
+  process.stdout.write('\n')
+  const conflicts = pathConflicts([...pathOf].map(([key, path]) => ({ key, path })))
+  for (const key of conflicts) if (selectedKeys.has(key)) failures.set(key, `Dropbox 路徑 ${pathOf.get(key)} 被多個不同連結引用`)
 
   const done = []
   const relinked = []
@@ -193,6 +201,12 @@ async function applyGroups(groups, measured, workDir, ledger, backupDir) {
     if (failed.length) {
       for (const a of group) if (!failures.has(a.key)) failures.set(a.key, `同組檔案失敗，整組略過（${failures.get(failed[0].key)}）`)
       console.error(`  略過：${failures.get(failed[0].key)}`)
+      continue
+    }
+    const states = group.map((a) => ledger.applied[pathOf.get(a.key)]?.state)
+    if (states.includes('uploaded')) {
+      for (const a of group) failures.set(a.key, '上次已上傳但未完成資料庫更新（ledger state=uploaded），需人工確認')
+      console.error('  略過：上次已上傳但未完成資料庫更新，需人工確認')
       continue
     }
     const applied = group.filter((a) => ledger.applied[pathOf.get(a.key)])
@@ -223,13 +237,15 @@ async function applyGroups(groups, measured, workDir, ledger, backupDir) {
       for (const { a, out } of cuts) {
         const path = pathOf.get(a.key)
         await uploadToDropbox(token, out, path)
+        ledger.applied[path] = {
+          state: 'uploaded', key: a.key, url: a.url, gainDb: a.gainDb, backup: measured.get(a.key).file, backupDir,
+          appliedAt: new Date().toISOString(),
+        }
+        writeJson(LEDGER_PATH, ledger)
         const newUrl = await getSharedLinkRawUrl(token, path)
         const changed = linkKey(newUrl) !== a.key
         if (changed) for (const ref of a.refs) await updateReference(ref, newUrl)
-        ledger.applied[path] = {
-          key: a.key, url: a.url, newUrl: changed ? newUrl : undefined, gainDb: a.gainDb, backup: measured.get(a.key).file,
-          backupDir, appliedAt: new Date().toISOString(),
-        }
+        Object.assign(ledger.applied[path], { state: 'done', newUrl: changed ? newUrl : undefined })
         writeJson(LEDGER_PATH, ledger)
         done.push(a)
         if (changed) relinked.push(a)
@@ -295,28 +311,30 @@ async function main() {
   console.log(`備份：${backupDir}（${backedUp}/${urlByKey.size} 個檔案，manifest.json）`)
 
   const ledger = readJson(LEDGER_PATH, { applied: {} })
-  const appliedKeys = new Set(Object.values(ledger.applied).map((e) => e.key))
+  const ledgerState = new Map(Object.values(ledger.applied).map((e) => [e.key, e.state]))
   const plan = planNormalization(refs.map((r) => ({ ...r, lufs: measured.get(r.key).lufs })), TARGET_LUFS)
   const groups = renderGroups(fileActions(plan))
   const actions = groups.flat()
   console.log('\n目前響度    增益      檔案 / 引用')
   for (const a of actions) {
     const m = measured.get(a.key)
-    const gain = a.skipped ? '  略過' : appliedKeys.has(a.key) ? '已套用' : `${fmt(a.gainDb)} dB`
+    const state = ledgerState.get(a.key)
+    const gain = a.skipped ? '  略過' : state === 'done' ? '已套用' : state ? '需人工' : `${fmt(a.gainDb)} dB`
     console.log(`${fmt(m.lufs).padStart(6)} LUFS  ${gain.padStart(8)}  ${backupFileName(a.url)}  ${describe(a)}`)
   }
   console.log('')
   printStats(refs, measured)
   const skipped = actions.filter((a) => a.skipped)
-  const already = actions.filter((a) => !a.skipped && appliedKeys.has(a.key))
-  console.log(`\n將重新編碼 ${actions.length - skipped.length - already.length} 個檔案，先前已套用 ${already.length}，略過 ${skipped.length}`)
+  const already = actions.filter((a) => !a.skipped && ledgerState.has(a.key))
+  console.log(`\n將重新編碼 ${actions.length - skipped.length - already.length} 個檔案，先前已套用或需人工 ${already.length}，略過 ${skipped.length}`)
   for (const a of skipped) console.log(`  略過：${describe(a)} — ${measured.get(a.key).error ?? a.skipped}`)
 
   if (!args.apply) {
     console.log('\ndry run 結束（未寫入）。加 --apply 才會重新編碼並上傳（建議先用 --only 試一首）。')
     return
   }
-  await applyGroups(groups.filter((g) => !g[0].skipped), measured, join(backupDir, 'normalized'), ledger, backupDir)
+  const allUrlByKey = new Map(collected.refs.map((r) => [linkKey(r.url), r.url]))
+  await applyGroups(groups.filter((g) => !g[0].skipped), allUrlByKey, measured, join(backupDir, 'normalized'), ledger, backupDir)
 }
 
 main().catch((e) => {

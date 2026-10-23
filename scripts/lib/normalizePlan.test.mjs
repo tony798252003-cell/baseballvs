@@ -121,13 +121,20 @@ test('an unmeasurable intro makes its song skipped too', () => {
   for (const a of group) assert.ok(a.skipped)
 })
 
-test('two actions resolving to the same Dropbox path are both flagged', () => {
+test('two links resolving to the same Dropbox path are both flagged', () => {
   // Two links to one path would upload that path twice, stacking two re-encodes of different sources.
-  const a = { key: 'a' }
-  const b = { key: 'b' }
-  const c = { key: 'c' }
-  const conflicts = pathConflicts([{ action: a, path: '/music/x.mp3' }, { action: b, path: '/music/x.mp3' }, { action: c, path: '/music/y.mp3' }])
+  const conflicts = pathConflicts([{ key: 'a', path: '/music/x.mp3' }, { key: 'b', path: '/music/x.mp3' }, { key: 'c', path: '/music/y.mp3' }])
   assert.deepEqual([...conflicts].sort(), ['a', 'b'])
+})
+
+test('a planned file sharing its Dropbox path with a skipped file is blocked too', () => {
+  // Uploading the planned one would silently re-encode what the skipped link plays as well.
+  const acts = fileActions([
+    { kind: 'song', ownerId: 1, url: L('ok'), gainDb: 1 },
+    { kind: 'chant', ownerId: 'c', url: L('bad'), gainDb: null, skipped: '增益不一致' },
+  ])
+  const conflicts = pathConflicts(acts.map((a) => ({ key: a.key, path: '/music/same.mp3' })))
+  assert.ok(conflicts.has(linkKey(L('ok'))))
 })
 
 const refs = [
@@ -153,6 +160,33 @@ test('--limit counts a song+intro pair as one unit and no selection keeps everyt
   assert.equal(selectRefs(refs, { limit: 1 }).length, 2)
   assert.equal(selectRefs(refs, { limit: 2 }).length, 3)
   assert.equal(selectRefs(refs, {}).length, 4)
+})
+
+test('--only on a player pulls in every other reference to that player files, so the gain check still runs', () => {
+  // A file also used as a team chant must not be re-encoded with only the player-side view of it.
+  const all = [
+    { kind: 'song', ownerId: 1, url: L('s1') },
+    { kind: 'intro', ownerId: 1, url: L('i1') },
+    { kind: 'chant', ownerId: 'c', url: L('i1', 'rlkey=K&raw=1') },
+    { kind: 'song', ownerId: 2, url: L('s2') },
+  ]
+  const sel = selectRefs(all, { only: '1' })
+  assert.deepEqual(sel.map((r) => r.kind), ['song', 'intro', 'chant'])
+  const lufs = { s1: -10, i1: -20, s2: -12 }
+  const plan = planNormalization(sel.map((r) => ({ ...r, lufs: lufs[r.url.split('/')[5]] })), T)
+  const shared = fileActions(plan).find((a) => a.key === linkKey(L('i1')))
+  assert.match(shared.skipped, /增益不一致/)
+})
+
+test('selection closes transitively over shared files and player pairs', () => {
+  // chant file = player 2 song, so player 2 intro must come too or its seam would get a level step.
+  const all = [
+    { kind: 'chant', ownerId: 'c', url: L('x') },
+    { kind: 'song', ownerId: 2, url: L('x') },
+    { kind: 'intro', ownerId: 2, url: L('i2') },
+    { kind: 'song', ownerId: 3, url: L('s3') },
+  ]
+  assert.deepEqual(selectRefs(all, { only: L('x') }).map((r) => r.url), [L('x'), L('x'), L('i2')])
 })
 
 test('median of song LUFS ignores unmeasurable values and averages the middle pair', () => {

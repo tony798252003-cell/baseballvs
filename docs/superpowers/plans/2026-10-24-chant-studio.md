@@ -17,7 +17,7 @@
 - Studio scope default: `status='active'`, `is_coach=false`, `song` empty; `--org` default `CPBL`; `--league` only applies to CPBL; pitchers (`main_position` in P/SP/RP/CP) excluded unless `--include-pitchers`.
 - Never overwrite a non-empty `song`; never overwrite a non-empty `intro` (skip the intro and list it in the summary); unchecked 有前奏 leaves `intro` untouched.
 - Cut structure: intro = original 0 → B with fade-out; song = original A → B with fade-in and fade-out of the slider length (0–300 ms, linear). Intro only if 有前奏 is checked (auto-checked when detected lead-in ≥ 2 s).
-- Gain = (target − integrated LUFS of the whole original) + user slider (−6…+6 dB); same gain for intro and song; true-peak limit −1 dBTP. Target placeholder −14 LUFS in one constant `TARGET_LUFS`.
+- Gain = (target − integrated LUFS of the whole original) + user slider (−6…+6 dB); same gain for intro and song; true-peak limit −1 dBTP. Target −12 LUFS (user decision 2026-10-24) in one constant `TARGET_LUFS`.
 - Output format mp3 (libmp3lame, high quality, gapless/LAME header written); filenames `球隊 - 姓名.mp3` and `球隊 - 姓名 - Intro.mp3` in Dropbox `/Music/Players/`; DB gets the `?raw=1` shared link.
 - Persistent studio data dir (state + downloads + renders): `/Users/tonywang/orca/workspaces/baseballvs/chant-studio/`.
 - YouTube search: fetch `https://www.youtube.com/results?search_query=…` with a browser UA, parse `var ytInitialData = {...};`; ≥1.5 s between requests; queries `<隊名> <姓名> 應援曲`, `<姓名> 應援曲`; keep top 3.
@@ -88,7 +88,7 @@
 - Produces: `findBinary(name: 'ffmpeg'|'yt-dlp'): string` (PATH, then `~/bin/ffmpeg` / `~/.local/bin/yt-dlp`; throws with install hint).
 - Produces: `parseEbur128(stderr: string): { integratedLufs: number, truePeakDb: number }` (from `-af ebur128=peak=true` summary).
 - Produces: `measureLoudness(file): Promise<{ integratedLufs, truePeakDb }>`.
-- Produces: `TARGET_LUFS = -14`; `computeGainDb({ integratedLufs, sliderDb = 0, target = TARGET_LUFS }): number`.
+- Produces: `TARGET_LUFS = -12` (user decision 2026-10-24); `computeGainDb({ integratedLufs, sliderDb = 0, target = TARGET_LUFS }): number`.
 - Produces: `buildRenderArgs({ src, out, start, end, fadeInMs, fadeOutMs, gainDb }): string[]` — `-ss/-to` (or `atrim`) on the original, `volume=<gainDb>dB`, `alimiter=limit=<-1 dBTP as linear>`, `afade` in/out, `libmp3lame -q:a 0`, write Xing/LAME header.
 - Produces: `renderCut(opts): Promise<void>`; `decodeDurationSec(file): Promise<number>` (ffmpeg decode to null, parse `time=`).
 - Produces: `decodePcm(file, sampleRate = 11025): Promise<Float32Array>` (ffmpeg → f32le mono).

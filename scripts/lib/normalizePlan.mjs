@@ -89,23 +89,30 @@ export function renderGroups(actions) {
   })
 }
 
-// resolved: { action, path }[] -> Set of action keys whose Dropbox path is shared with another action.
+/**
+ * resolved: { key, path }[] for EVERY referenced file (selected or not, planned or skipped) -> Set of
+ * keys whose Dropbox path is also behind another link. All of them are blocked: uploading one would
+ * also change what the other links (possibly skipped or out of scope) play.
+ */
 export function pathConflicts(resolved) {
   const byPath = new Map()
-  for (const { action, path } of resolved) {
-    if (!byPath.has(path)) byPath.set(path, [])
-    byPath.get(path).push(action.key)
+  for (const { key, path } of resolved) {
+    if (!byPath.has(path)) byPath.set(path, new Set())
+    byPath.get(path).add(key)
   }
-  return new Set([...byPath.values()].filter((keys) => keys.length > 1).flat())
+  return new Set([...byPath.values()].filter((keys) => keys.size > 1).flatMap((keys) => [...keys]))
 }
+
+const unitOf = (r) => (r.kind === 'song' || r.kind === 'intro' ? `p:${r.ownerId}` : `f:${linkKey(r.url)}`)
 
 /**
  * Narrows refs for a trial run. only: a player id (that player's song + intro) or a shared-link URL
- * (that file, plus the song/intro partner of any player using it, so the shared gain is still known).
- * limit: first n units, where a player's song + intro count as one unit.
+ * (that file in any link form). limit: first n units, where a player's song + intro count as one unit.
+ * The selection is then closed: every reference to a selected file and the song/intro partner of every
+ * selected player is pulled in, repeated until nothing changes, so gain checks and relinks see the
+ * whole picture for each file touched.
  */
 export function selectRefs(refs, { only, limit } = {}) {
-  const unitOf = (r) => (r.kind === 'song' || r.kind === 'intro' ? `p:${r.ownerId}` : `f:${linkKey(r.url)}`)
   let selected = refs
   if (only) {
     const isPlayerId = /^\d+$/.test(only)
@@ -118,7 +125,23 @@ export function selectRefs(refs, { only, limit } = {}) {
     const units = [...new Set(selected.map(unitOf))].slice(0, limit)
     selected = selected.filter((r) => units.includes(unitOf(r)))
   }
-  return selected
+  if (selected === refs) return refs
+  const keys = new Set(selected.map((r) => linkKey(r.url)))
+  const units = new Set(selected.map(unitOf))
+  for (let grew = true; grew;) {
+    grew = false
+    for (const r of refs) {
+      const k = linkKey(r.url)
+      const u = unitOf(r)
+      if (keys.has(k) && units.has(u)) continue
+      if (keys.has(k) || units.has(u)) {
+        keys.add(k)
+        units.add(u)
+        grew = true
+      }
+    }
+  }
+  return refs.filter((r) => keys.has(linkKey(r.url)))
 }
 
 export function median(values) {
