@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { filterRosterByLeague, sortTeamsByTeamsOrder } from './playerFilterLogic.js'
+import { filterRosterByLeague, sortTeamsByTeamsOrder, requiresTeamSelection } from './playerFilterLogic.js'
+import { orgOfTeam } from '../constants/teams.js'
 
-const p = (name, team, extra = {}) => ({ name, team, status: 'active', isCoach: false, league: '一軍', ...extra })
+const p = (name, team, extra = {}) => ({ name, team, org: orgOfTeam(team), status: 'active', isCoach: false, league: '一軍', ...extra })
 const roster = [
   p('A', '中信兄弟'),
   p('B', '中信兄弟', { league: '二軍' }),
@@ -37,8 +38,22 @@ test('org filter separates CPBL / NPB / MLB', () => {
   assert.deepEqual(names(roster, 'MLB', '一軍'), ['E'])
 })
 
-test('unknown team names are excluded from every org', () => {
-  assert.deepEqual(names([p('X', '不存在隊')], 'CPBL', '一軍'), [])
+// 新的歷史隊名還沒進 TEAMS 時，球員不能因此從中職分頁消失
+test('player with an unknown team but org CPBL still appears under 中職 (org comes from DB, not TEAMS)', () => {
+  const list = [p('X', '不存在隊', { org: 'CPBL' })]
+  assert.deepEqual(names(list, 'CPBL', '一軍'), ['X'])
+  assert.deepEqual(names(list, 'NPB', '一軍'), [])
+})
+
+test('unknown team names sort after every known team (logos/order only, never dropped)', () => {
+  assert.deepEqual(sortTeamsByTeamsOrder(['不存在隊', '兄弟象', '樂天桃猿']), ['樂天桃猿', '兄弟象', '不存在隊'])
+})
+
+// 離隊分頁一次渲染數千張照片會卡死：沒選球隊時不列球員
+test('departed tab requires a team before listing players; other tabs do not', () => {
+  assert.equal(requiresTeamSelection('departed', null), true)
+  assert.equal(requiresTeamSelection('departed', '兄弟象'), false)
+  assert.equal(requiresTeamSelection('一軍', null), false)
 })
 
 test('team order follows TEAMS: active CPBL six first, defunct after', () => {

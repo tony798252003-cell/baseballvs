@@ -77,3 +77,22 @@ test('隊名與別名不可重複（否則 canonicalTeamName 結果不確定）'
   const all = TEAMS.flatMap(t => [t.name, ...(t.aliases || [])])
   assert.equal(new Set(all).size, all.length)
 })
+
+// CPBL 個人頁頁首用簡稱：沒對應到就會存成未知隊名，歷史球員掉出中職分頁
+test('CPBL 官網頁首的歷史簡稱都解析到 CPBL 球隊，有 successor 的球團導到現役隊', () => {
+  const expected = {
+    '統一7-ELEVEn獅': '統一獅', 兄弟: '中信兄弟', Lamigo: '樂天桃猿', 味全龍: undefined, 興農: '富邦悍將',
+    中信兄弟: undefined, 中信: undefined, 富邦悍將: undefined, 三商: undefined, 樂天桃猿: undefined,
+    誠泰: undefined, 台鋼雄鷹: undefined, 時報: undefined, 義大: '富邦悍將', 米迪亞: undefined,
+    俊國: '富邦悍將', 第一: '樂天桃猿',
+  }
+  for (const [abbr, successor] of Object.entries(expected)) {
+    const t = teamInfo(abbr)
+    assert.ok(t, `${abbr} 沒有對應球隊`)
+    assert.equal(t.org, 'CPBL', abbr)
+    assert.equal(t.successor, successor, abbr)
+  }
+  assert.equal(canonicalTeamName('兄弟'), '兄弟象')
+  assert.equal(canonicalTeamName('興農'), '興農牛')
+  assert.equal(canonicalTeamName('中信'), '中信鯨')
+})

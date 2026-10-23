@@ -10,7 +10,8 @@ const cpbl = (name, logo, cpblClubNo) => ({ name, org: 'CPBL', logo, cpblClubNo 
 const npb = (name, yahooTeamId, en) => ({ name, org: 'NPB', logo: `/logos/npb-${en}.png`, yahooTeamId })
 const mlb = (name, aliases) => ({ name, org: 'MLB', ...(aliases && { aliases }) })
 // 已解散／改名球隊：保留當時隊名；同一球團改名者以 successor 指向現役球隊
-const defunct = (name, successor) => ({ name, org: 'CPBL', defunct: true, ...(successor && { successor }) })
+// aliases：CPBL 官網個人頁頁首使用的簡稱（例如「兄弟」）
+const defunct = (name, successor, aliases) => ({ name, org: 'CPBL', defunct: true, ...(successor && { successor }), ...(aliases && { aliases }) })
 
 export const TEAMS = [
   // CPBL 現役（順序即 CPBL_TEAMS 順序）
@@ -22,21 +23,21 @@ export const TEAMS = [
   cpbl('中信兄弟', '/logos/brothers.png', 'ACN'),
 
   // CPBL 已解散／改名（舊味全龍與現役味全龍視為同一隊，不另立）
-  defunct('兄弟象', '中信兄弟'),
+  defunct('兄弟象', '中信兄弟', ['兄弟']),
   defunct('統一7-ELEVEn獅', '統一獅'),
-  defunct('俊國熊', '富邦悍將'),
+  defunct('俊國熊', '富邦悍將', ['俊國']),
   defunct('興農熊', '富邦悍將'),
-  defunct('興農牛', '富邦悍將'),
-  defunct('義大犀牛', '富邦悍將'),
-  defunct('第一金剛', '樂天桃猿'),
+  defunct('興農牛', '富邦悍將', ['興農']), // 簡稱「興農」涵蓋興農熊／興農牛，對應較晚的興農牛
+  defunct('義大犀牛', '富邦悍將', ['義大']),
+  defunct('第一金剛', '樂天桃猿', ['第一']),
   defunct('La New熊', '樂天桃猿'),
-  defunct('Lamigo桃猿', '樂天桃猿'),
+  defunct('Lamigo桃猿', '樂天桃猿', ['Lamigo']),
   defunct('和信鯨'),
-  defunct('中信鯨'),
-  defunct('誠泰COBRAS'),
-  defunct('米迪亞暴龍'),
-  defunct('三商虎'),
-  defunct('時報鷹'),
+  defunct('中信鯨', undefined, ['中信']),
+  defunct('誠泰COBRAS', undefined, ['誠泰']),
+  defunct('米迪亞暴龍', undefined, ['米迪亞']),
+  defunct('三商虎', undefined, ['三商']),
+  defunct('時報鷹', undefined, ['時報']),
 
   // NPB 12 隊（yahooTeamId 為 baseball.yahoo.co.jp/npb/teams/<id>/players）
   npb('讀賣巨人', 1, 'giants'),

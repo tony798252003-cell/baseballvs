@@ -1,5 +1,4 @@
 import { computed, ref, watch } from 'vue'
-import { orgOfTeam } from '../constants/teams.js'
 import { filterRosterByLeague, sortTeamsByTeamsOrder } from './playerFilterLogic.js'
 
 // 球員過濾和計算 composable
@@ -10,12 +9,10 @@ export function usePlayerFilters(roster, selectedTeam) {
   // 換聯盟時清掉已選球隊（舊球隊不屬於新聯盟）
   watch(selectedOrg, () => { selectedTeam.value = null })
 
-  // 球隊列表：僅限目前聯盟，依 TEAMS 順序
+  // 球隊列表：僅限目前聯盟（依 DB org 欄位），依 TEAMS 順序
   const teams = computed(() => {
-    const teamSet = new Set(roster.value.map(p => p.team))
-    return sortTeamsByTeamsOrder(
-      [...teamSet].filter(t => orgOfTeam(t) === selectedOrg.value)
-    )
+    const teamSet = new Set(roster.value.filter(p => p.org === selectedOrg.value).map(p => p.team))
+    return sortTeamsByTeamsOrder(teamSet)
   })
 
   // 判斷是否為投手守位的輔助函數
