@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   selectPlayers, runPipeline, nextCardId, applyCardEdit, youtubeVideoId,
-  chooseNextCandidate, useCustomUrl, retryCard, safeJoin,
+  chooseNextCandidate, useCustomUrl, retryCard, safeJoin, checkRequest, mediaPath,
 } from './studioPipeline.mjs'
 
 const row = (over = {}) => ({
@@ -43,13 +43,14 @@ const card = (id, over = {}) => ({
   playerId: id, name: `球員${id}`, team: '樂天桃猿', status: 'pending', candidates: [], chosen: 0,
   fadeMs: 60, sliderDb: 0, withIntro: false, ...over,
 })
+const vid = (id) => id.padStart(11, 'v') // 11-char YouTube-shaped id
 const suggestion = { A: 6.8, B: 22.8, leadInSec: 6.8, hasIntro: true, confidence: 0.7, beats: [0.5, 1] }
 const fakes = (over = {}) => {
   const calls = { search: [], download: [], analyze: [], saves: 0 }
   return {
     calls,
     deps: {
-      search: async (c) => { calls.search.push(c.playerId); return [{ videoId: `v${c.playerId}`, title: 't' }] },
+      search: async (c) => { calls.search.push(c.playerId); return [{ videoId: vid(c.playerId), title: 't' }] },
       download: async (c, src) => { calls.download.push(src); return `b/orig/${c.playerId}-${src.videoId}.mp3` },
       analyze: async (orig) => { calls.analyze.push(orig); return { integratedLufs: -10, durationSec: 30, suggestion } },
       save: async () => { calls.saves++ },
@@ -64,14 +65,14 @@ test('runPipeline: one failing search marks only that card error and continues (
     search: async (c) => {
       calls.search.push(c.playerId)
       if (c.playerId === '1') throw new Error('YouTube search failed: HTTP 429')
-      return [{ videoId: 'v2' }]
+      return [{ videoId: vid('2') }]
     },
   })
   await runPipeline(state, deps)
   assert.equal(state.cards[1].status, 'error')
   assert.match(state.cards[1].error, /HTTP 429/)
   assert.equal(state.cards[2].status, 'pending')
-  assert.equal(state.cards[2].original, 'b/orig/2-v2.mp3')
+  assert.equal(state.cards[2].original, `b/orig/2-${vid('2')}.mp3`)
   assert.equal(calls.saves, 2)
 })
 
@@ -80,7 +81,7 @@ test('runPipeline sets cut, intro and loudness from the analysis (the page start
   const { calls, deps } = fakes({ analyze: async () => ({ integratedLufs: -9.5, durationSec: 22.5, suggestion }) })
   await runPipeline(state, deps)
   const c = state.cards[1]
-  assert.deepEqual(calls.download, [{ videoId: 'v1', url: 'https://www.youtube.com/watch?v=v1' }])
+  assert.deepEqual(calls.download, [{ videoId: vid('1'), url: `https://www.youtube.com/watch?v=${vid('1')}` }])
   assert.deepEqual([c.A, c.B, c.withIntro, c.integratedLufs, c.durationSec], [6.8, 22.5, true, -9.5, 22.5])
   assert.deepEqual(c.suggestion, suggestion)
 })
@@ -167,10 +168,13 @@ test('useCustomUrl stores a canonical watch URL and rejects other hosts', () => 
   assert.ok(useCustomUrl(ready(), 'https://vimeo.com/123'))
 })
 
-test('retryCard only re-queues error/notfound cards (retry must not discard a tuned card)', () => {
+test('retryCard only re-queues error/notfound/skipped cards (retry must not discard a tuned card)', () => {
   const c = card('1', { status: 'error', error: 'boom' })
   assert.equal(retryCard(c), null)
   assert.deepEqual([c.status, c.error], ['pending', undefined])
+  const skipped = card('2', { status: 'skipped' })
+  assert.equal(retryCard(skipped), null)
+  assert.equal(skipped.status, 'pending')
   assert.ok(retryCard(ready({ status: 'resolved' })))
 })
 
@@ -178,5 +182,51 @@ test('safeJoin blocks path traversal (media route must stay inside the studio di
   assert.equal(safeJoin('/data', 'b/orig/1-x.mp3'), '/data/b/orig/1-x.mp3')
   for (const bad of ['../etc/passwd', 'b/../../x', '/etc/passwd', 'b\\..\\x', 'b//x', '', 'a\0b']) {
     assert.equal(safeJoin('/data', bad), null, bad)
+  }
+})
+
+test('runPipeline skips search results with a malformed videoId (it becomes a file path and yt-dlp argument)', async () => {
+  const state = { batch: 'b', cards: { 1: card('1') } }
+  const { calls, deps } = fakes({ search: async () => [{ videoId: '../../x' }, { videoId: 'abcdefghijk' }] })
+  await runPipeline(state, deps)
+  assert.deepEqual(state.cards[1].candidates.map((v) => v.videoId), ['abcdefghijk'])
+  assert.deepEqual(calls.download.map((d) => d.videoId), ['abcdefghijk'])
+  const only = { batch: 'b', cards: { 1: card('1') } }
+  await runPipeline(only, fakes({ search: async () => [{ videoId: 'bad id' }] }).deps)
+  assert.equal(only.cards[1].status, 'notfound')
+})
+
+test('runPipeline clamps a suggestion into 0 <= A < B <= duration (later edits/renders validate against it)', async () => {
+  const state = { batch: 'b', cards: { 1: card('1') } }
+  const bad = { ...suggestion, A: 25, B: 40 }
+  await runPipeline(state, fakes({ analyze: async () => ({ integratedLufs: -10, durationSec: 20, suggestion: bad }) }).deps)
+  const c = state.cards[1]
+  assert.equal(c.B, 20)
+  assert.ok(c.A >= 0 && c.A < c.B, `A=${c.A}`)
+  const neg = { batch: 'b', cards: { 1: card('1') } }
+  await runPipeline(neg, fakes({ analyze: async () => ({ integratedLufs: -10, durationSec: 20, suggestion: { ...suggestion, A: -1, B: 10 } }) }).deps)
+  assert.deepEqual([neg.cards[1].A, neg.cards[1].B], [0, 10])
+})
+
+const req = (over = {}) => ({ method: 'POST', host: '127.0.0.1:8777', origin: undefined, contentType: 'application/json', ...over })
+
+test('checkRequest blocks DNS rebinding and cross-site POSTs (any web page could otherwise drive the local studio)', () => {
+  assert.equal(checkRequest(req(), 8777), null)
+  assert.equal(checkRequest(req({ host: 'localhost:8777', origin: 'http://localhost:8777', contentType: 'application/json; charset=utf-8' }), 8777), null)
+  assert.equal(checkRequest(req({ method: 'GET', contentType: undefined }), 8777), null)
+  assert.equal(checkRequest(req({ host: 'evil.com:8777' }), 8777).status, 403)
+  assert.equal(checkRequest(req({ host: '127.0.0.1:9999' }), 8777).status, 403)
+  assert.equal(checkRequest(req({ method: 'GET', host: 'evil.com' }), 8777).status, 403)
+  assert.equal(checkRequest(req({ contentType: 'text/plain' }), 8777).status, 415)
+  assert.equal(checkRequest(req({ contentType: undefined }), 8777).status, 415)
+  assert.equal(checkRequest(req({ origin: 'https://evil.com' }), 8777).status, 403)
+  assert.equal(checkRequest(req({ origin: 'null' }), 8777).status, 403)
+})
+
+test('mediaPath serves only a batch\'s originals and renders (not state files or other batches)', () => {
+  assert.equal(mediaPath('/data', 'b1', 'b1/orig/1-abcdefghijk.mp3'), '/data/b1/orig/1-abcdefghijk.mp3')
+  assert.equal(mediaPath('/data', 'b1', 'b1/render/1/song.mp3'), '/data/b1/render/1/song.mp3')
+  for (const bad of ['b1.json', 'b2/orig/x.mp3', 'b1/other/x.mp3', 'b1/orig/../../b2.json', 'b1/orig/']) {
+    assert.equal(mediaPath('/data', 'b1', bad), null, bad)
   }
 })

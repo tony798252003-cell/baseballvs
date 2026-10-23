@@ -51,7 +51,8 @@ async function processCard(card, { search, download, analyze }) {
     let source
     if (card.customUrl) source = { videoId: youtubeVideoId(card.customUrl), url: card.customUrl }
     else {
-      if (!card.candidates?.length) card.candidates = await search(card)
+      // videoId ends up in a file path and a yt-dlp argument: drop anything that is not a plain id
+      if (!card.candidates?.length) card.candidates = (await search(card)).filter((v) => VIDEO_ID.test(v?.videoId ?? ''))
       if (!card.candidates.length) {
         card.status = 'notfound'
         return
@@ -61,15 +62,10 @@ async function processCard(card, { search, download, analyze }) {
     }
     const original = await download(card, source)
     const { integratedLufs, durationSec, suggestion } = await analyze(original)
-    Object.assign(card, {
-      original,
-      integratedLufs,
-      durationSec,
-      suggestion,
-      A: suggestion.A,
-      B: Math.min(suggestion.B, durationSec),
-      withIntro: suggestion.hasIntro,
-    })
+    // Keep the starting cut inside 0 <= A < B <= duration so edits/renders validate.
+    const B = Math.min(suggestion.B, durationSec)
+    const A = suggestion.A >= 0 && suggestion.A < B ? suggestion.A : 0
+    Object.assign(card, { original, integratedLufs, durationSec, suggestion, A, B, withIntro: suggestion.hasIntro })
     delete card.error
   } catch (e) {
     card.status = 'error'
@@ -133,7 +129,7 @@ export function useCustomUrl(card, url) {
 }
 
 export function retryCard(card) {
-  if (card.status !== 'error' && card.status !== 'notfound') return '只有錯誤或找不到的卡片可以重試'
+  if (!['error', 'notfound', 'skipped'].includes(card.status)) return '只有錯誤、找不到或已跳過的卡片可以重試'
   resetForReprocess(card)
   return null
 }
@@ -144,4 +140,23 @@ export function safeJoin(root, rel) {
   if (rel.split('/').some((s) => s === '' || s === '.' || s === '..')) return null
   const full = join(root, rel)
   return full.startsWith(root.endsWith(sep) ? root : root + sep) ? full : null
+}
+
+// Media is limited to <batch>/orig/<file> and <batch>/render/<playerId>/<file> of the current batch.
+export function mediaPath(studioDir, batch, rel) {
+  const parts = rel?.split('/') ?? []
+  const ok = parts[0] === batch && ((parts[1] === 'orig' && parts.length === 3) || (parts[1] === 'render' && parts.length === 4))
+  return ok ? safeJoin(studioDir, rel) : null
+}
+
+// Local-only guard: Host must be this server (DNS rebinding), a present Origin must be this server,
+// and POSTs must be JSON (forces a CORS preflight, which the server never answers with CORS headers).
+export function checkRequest({ method, host, origin, contentType }, port) {
+  const allowed = [`127.0.0.1:${port}`, `localhost:${port}`]
+  if (!allowed.includes(host)) return { status: 403, error: 'forbidden host' }
+  if (origin !== undefined && !allowed.some((h) => origin === `http://${h}`)) return { status: 403, error: 'forbidden origin' }
+  if (method === 'POST' && (contentType ?? '').split(';')[0].trim().toLowerCase() !== 'application/json') {
+    return { status: 415, error: 'Content-Type must be application/json' }
+  }
+  return null
 }

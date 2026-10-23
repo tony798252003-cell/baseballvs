@@ -16,7 +16,8 @@ import { TARGET_LUFS, computeGainDb, decodeDurationSec, decodePcm, findBinary, m
 import { suggestCut } from './lib/cutSuggest.mjs'
 import { STUDIO_DIR, batchName, loadState, mergePlayers, saveState } from './lib/studioState.mjs'
 import {
-  applyCardEdit, chooseNextCandidate, nextCardId, retryCard, runPipeline, safeJoin, selectPlayers, useCustomUrl,
+  applyCardEdit, checkRequest, chooseNextCandidate, mediaPath, nextCardId, retryCard, runPipeline, safeJoin, selectPlayers,
+  useCustomUrl,
 } from './lib/studioPipeline.mjs'
 
 const PAGE_DIR = fileURLToPath(new URL('./chant-studio/', import.meta.url))
@@ -153,10 +154,16 @@ function readJson(req) {
     let body = ''
     req.on('data', (d) => {
       body += d
-      if (body.length > MAX_BODY) reject(Object.assign(new Error('body too large'), { status: 413 }))
+      if (body.length > MAX_BODY) {
+        reject(Object.assign(new Error('body too large'), { status: 413 }))
+        req.destroy()
+      }
     })
     req.on('end', () => {
-      try { resolve(body ? JSON.parse(body) : {}) } catch { reject(Object.assign(new Error('invalid JSON'), { status: 400 })) }
+      let parsed
+      try { parsed = body ? JSON.parse(body) : {} } catch { parsed = undefined }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) resolve(parsed)
+      else reject(Object.assign(new Error('body must be a JSON object'), { status: 400 }))
     })
     req.on('error', reject)
   })
@@ -172,20 +179,23 @@ function apiState() {
 const CARD_ACTIONS = { next: chooseNextCandidate, retry: retryCard, url: (card, body) => useCustomUrl(card, body.url) }
 
 async function handle(req, res) {
+  const denied = checkRequest({ method: req.method, host: req.headers.host, origin: req.headers.origin, contentType: req.headers['content-type'] }, port)
+  if (denied) return sendJson(res, denied.status, { error: denied.error })
   const { pathname } = new URL(req.url, 'http://127.0.0.1')
   let path
   try { path = decodeURIComponent(pathname) } catch { return sendJson(res, 400, { error: 'bad path' }) }
 
   if (req.method === 'GET' && path === '/api/state') return sendJson(res, 200, apiState())
-  if (req.method === 'GET' && path.startsWith('/media/')) return sendFile(res, safeJoin(STUDIO_DIR, path.slice('/media/'.length)))
+  if (req.method === 'GET' && path.startsWith('/media/')) return sendFile(res, mediaPath(STUDIO_DIR, batch, path.slice('/media/'.length)))
   if (req.method === 'POST' && path === '/api/submit') return sendJson(res, 501, { error: 'not implemented' })
 
   const m = /^\/api\/cards\/([^/]+)(?:\/(next|url|retry))?$/.exec(path)
   if (req.method === 'POST' && m) {
     const card = state.cards[m[1]]
     if (!card) return sendJson(res, 404, { error: '找不到這張卡片' })
-    if (processing === m[1]) return sendJson(res, 409, { error: '這張卡片正在處理中，請稍候' })
     const body = await readJson(req)
+    // Checked after the body is read so the check and the mutation below run without an await in between.
+    if (processing === m[1]) return sendJson(res, 409, { error: '這張卡片正在處理中，請稍候' })
     const error = m[2] ? CARD_ACTIONS[m[2]](card, body) : applyCardEdit(card, body)
     if (error) return sendJson(res, 400, { error })
     save(state)
