@@ -1,21 +1,20 @@
 // 應援曲工作台卡片頁：讀 /api/state 畫卡片，拖拉 A/B 微調（沿用試驗頁），Web Audio 預覽＝成品的切點、淡入淡出與增益。
-'use strict'
+import { clampCut, compressorMakeupDb, cutToSave, fadeSec, previewGainDb, submitNames } from './logic.js'
 
 const STATUS_LABEL = { pending: '待處理', resolved: '✅ 已解決', skipped: '⏭ 跳過', notfound: '找不到', error: '錯誤' }
-const MAX_GAIN_DB = 20 // same clamp as computeGainDb on the server
 const LIMIT_DB = -1
+const LIMIT_RATIO = 20
 const LOW_CONFIDENCE = 0.3
 const SAVE_DELAY_MS = 400
 const POLL_MS = 3000
 const ZOOM_SEC = 1.5
-const MIN_LOOP_SEC = 1
 const DRAG_START_PX = 3
 
 const ctx = new (window.AudioContext || window.webkitAudioContext)()
 let targetLufs = -14
 let latest = null // last /api/state
 const views = new Map() // playerId -> view
-const buffers = new Map() // original path -> Promise<{ buf, env }>
+const buffers = new Map() // media path -> Promise<{ buf, env }>
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 const round3 = (x) => Math.round(x * 1000) / 1000
@@ -51,10 +50,10 @@ function envelope(buf) {
   return env
 }
 
-function loadOriginal(rel) {
+function loadAudio(rel) {
   if (!buffers.has(rel)) {
     const p = fetch(mediaUrl(rel))
-      .then((r) => { if (!r.ok) throw new Error(`原曲讀取失敗 HTTP ${r.status}`); return r.arrayBuffer() })
+      .then((r) => { if (!r.ok) throw new Error(`音檔讀取失敗 HTTP ${r.status}（${rel}）`); return r.arrayBuffer() })
       .then((b) => ctx.decodeAudioData(b))
       .then((buf) => ({ buf, env: envelope(buf) }))
     p.catch(() => buffers.delete(rel))
@@ -64,7 +63,8 @@ function loadOriginal(rel) {
 }
 
 // One playback at a time, owned by one view. Segments are scheduled back to back (no overlap), like the
-// rendered files played gaplessly: fade -> shared volume (gain) -> limiter (~ -1 dB) -> speakers.
+// rendered files played gaplessly. Original: fade -> shared volume (gain) -> limiter (~ -1 dB) -> makeup
+// compensation -> speakers. Rendered files already carry gain/fades/limit, so they go straight out.
 const player = { view: null, nodes: [], sched: [], vol: null, endAt: 0 }
 
 function stopPlayback() {
@@ -74,36 +74,44 @@ function stopPlayback() {
   v?.drawAll()
 }
 
-async function startPlayback(view) {
+async function startPlayback(view, { rendered = false } = {}) {
   stopPlayback()
   await ctx.resume()
+  stopPlayback() // another click may have started a playback while we awaited resume()
   const vol = ctx.createGain()
-  vol.gain.value = 10 ** (view.gainDb() / 20)
-  const lim = ctx.createDynamicsCompressor()
-  lim.threshold.value = LIMIT_DB
-  lim.knee.value = 0
-  lim.ratio.value = 20
-  lim.attack.value = 0.001
-  lim.release.value = 0.1
-  vol.connect(lim).connect(ctx.destination)
+  if (rendered) vol.connect(ctx.destination)
+  else {
+    vol.gain.value = 10 ** (view.gainDb() / 20)
+    const lim = ctx.createDynamicsCompressor()
+    lim.threshold.value = LIMIT_DB
+    lim.knee.value = 0
+    lim.ratio.value = LIMIT_RATIO
+    lim.attack.value = 0.001
+    lim.release.value = 0.1
+    // The compressor always adds makeup gain (~0.57 dB here); take it back out so preview loudness ≈ render.
+    const unmakeup = ctx.createGain()
+    unmakeup.gain.value = 10 ** (-compressorMakeupDb(LIMIT_DB, LIMIT_RATIO) / 20)
+    vol.connect(lim).connect(unmakeup).connect(ctx.destination)
+  }
   Object.assign(player, { view, vol })
   return ctx.currentTime + 0.05
 }
 
-// Plays original[off, off+len) at `when`; fades are linear and clamped to half the segment like the render.
-function segment(when, off, len, fadeIn, fadeOut) {
+// Plays buf[off, off+len) at `when`; fades are linear and clamped to half the segment like the render.
+// origOff is where the segment starts in the original, so the playhead can be drawn on its waveform.
+function segment(when, buf, off, len, { fadeIn = false, fadeOut = false, origOff = off } = {}) {
   const { view } = player
   const src = ctx.createBufferSource()
-  src.buffer = view.buf
+  src.buffer = buf
   const fade = ctx.createGain()
   src.connect(fade).connect(player.vol)
-  const f = Math.min(view.st.fadeMs / 1000, len / 2)
+  const f = fadeSec(view.st.fadeMs, len)
   fade.gain.setValueAtTime(fadeIn && f ? 0 : 1, when)
   if (fadeIn && f) fade.gain.linearRampToValueAtTime(1, when + f)
   if (fadeOut && f) { fade.gain.setValueAtTime(1, when + len - f); fade.gain.linearRampToValueAtTime(0, when + len) }
   src.start(when, off, len)
   player.nodes.push(src)
-  player.sched.push({ at: when, off, len })
+  player.sched.push({ at: when, off: origOff, len })
   player.endAt = when + len
   return when + len
 }
@@ -148,14 +156,15 @@ function headerHtml(card) {
   let status = STATUS_LABEL[card.status] ?? card.status
   if (needsWork(card)) status = isProcessing(card) ? '處理中…' : '排隊中'
   return `<h2>#${esc(card.number)} ${esc(card.name)} <small>${esc(card.position ?? '')} · ${esc(card.team)}</small>
-    <span class="badge ${esc(card.status)}">${esc(status)}</span>${low}</h2>`
+    <span class="badge ${esc(card.status)}">${esc(status)}</span>${card.uploaded ? '<span class="badge resolved">已上傳</span>' : ''}${low}</h2>`
 }
 
 const NUDGES = ['-0.1', '-0.01', '+0.01', '+0.1']
 function tuneHtml(card) {
   const nudge = (k) => `<div class="row"><span class="lbl l${k}"></span>${NUDGES.map((d) => `<button data-m="${k}" data-d="${d}">${d}</button>`).join('')}<button data-snap="${k}">對齊鼓點</button></div>`
+  const note = card.uploaded ? '<div class="dim">已上傳：試聽播放產生出來的成品檔，切點不能再改。</div>' : ''
   const lead = card.suggestion ? `（偵測前奏 ${card.suggestion.leadInSec.toFixed(2)} s）` : ''
-  return `<div class="tune">
+  return `<div class="tune">${note}
     <div class="dim">拖拉 A／B，放開自動播接縫；雙擊整首波形＝從那裡播原曲；紅線＝目前位置</div>
     <canvas class="wave"></canvas>
     <div class="zooms"><div><div class="row">A 附近 ±1.5s</div><canvas class="za"></canvas></div><div><div class="row">B 附近 ±1.5s</div><canvas class="zb"></canvas></div></div>
@@ -198,24 +207,41 @@ function createView(card) {
     ${card.status === 'notfound' ? '<p class="err">找不到合適的影片，請貼 YouTube 網址或重試。</p>' : ''}
     ${busy ? '<p class="dim">搜尋／下載／分析中，完成後會自動出現微調區。</p>' : ''}
     ${card.original && card.status !== 'error' ? '<div class="tunebox"><p class="dim">載入原曲…</p></div>' : ''}
-    ${isProcessing(card) ? '' : actionsHtml(card)}`
+    ${isProcessing(card) || card.uploaded ? '' : actionsHtml(card)}`
 
-  view.gainDb = () => Math.min(MAX_GAIN_DB, Math.max(-MAX_GAIN_DB, targetLufs - card.integratedLufs + view.st.sliderDb))
+  view.gainDb = () => previewGainDb({ targetLufs, integratedLufs: card.integratedLufs, sliderDb: view.st.sliderDb })
 
   // ---- actions ----
   el.querySelectorAll('[data-act]').forEach((btn) => { btn.onclick = () => runAction(view, btn.dataset.act) })
 
-  if (card.original && card.status !== 'error') {
-    loadOriginal(card.original).then(({ buf, env }) => {
+  // Decoded lazily (card scrolled into view or first touched): each original is several MB of PCM.
+  let loading = false
+  view.load = () => {
+    if (loading || !card.original || card.status === 'error') return
+    loading = true
+    lazyLoader.unobserve(el)
+    const renderDir = `${latest.batch}/render/${card.playerId}`
+    Promise.all([
+      loadAudio(card.original),
+      card.uploaded ? loadAudio(`${renderDir}/song.mp3`) : null,
+      card.uploaded?.intro ? loadAudio(`${renderDir}/intro.mp3`) : null,
+    ]).then(([orig, song, intro]) => {
       if (views.get(view.id) !== view) return // replaced meanwhile
-      view.buf = buf
-      view.env = env
+      Object.assign(view, { buf: orig.buf, env: orig.env, song: song?.buf ?? null, intro: intro?.buf ?? null })
       q('.tunebox').innerHTML = tuneHtml(card)
       bindTune(view)
     }).catch((e) => { q('.tunebox').innerHTML = `<p class="err">${esc(e.message)}</p>` })
   }
+  if (card.original && card.status !== 'error') {
+    lazyLoader.observe(el)
+    el.addEventListener('pointerdown', view.load, { once: true })
+  }
   return view
 }
+
+const lazyLoader = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) [...views.values()].find((v) => v.el === e.target)?.load()
+}, { rootMargin: '300px' })
 
 function bindTune(view) {
   const { el, card, env, buf } = view
@@ -226,10 +252,8 @@ function bindTune(view) {
   const windows = { wave: () => [0, dur], za: () => [st.A - ZOOM_SEC, st.A + ZOOM_SEC], zb: () => [st.B - ZOOM_SEC, st.B + ZOOM_SEC] }
   const frozen = {} // zoom window held still while dragging inside it
 
-  function clamp() {
-    st.A = Math.max(0, Math.min(st.A, dur - MIN_LOOP_SEC))
-    st.B = Math.max(st.A + MIN_LOOP_SEC, Math.min(st.B, dur))
-  }
+  const locked = !!card.uploaded // edits would not change the uploaded files
+  const clamp = () => Object.assign(st, clampCut(st, dur))
 
   function draw(cls) {
     const cv = q(`.${cls}`)
@@ -287,26 +311,38 @@ function bindTune(view) {
     q('.vol').value = st.sliderDb
     q('.volv').textContent = `${fmtDb(st.sliderDb)}（總增益 ${fmtDb(view.gainDb())}）`
     q('.intro').checked = st.withIntro
-    q('.full').style.display = st.withIntro ? '' : 'none'
+    q('.full').style.display = (locked ? view.intro : st.withIntro) ? '' : 'none'
   }
 
   // ---- previews ----
+  // Uploaded cards play the rendered song/intro files (spec §4); others preview from the original.
   async function playSeam() {
-    if (!view.buf) return
-    let t = await startPlayback(view)
+    let t = await startPlayback(view, { rendered: locked })
+    if (locked) {
+      const S = view.song
+      const pre = Math.min(3, S.duration)
+      t = segment(t, S, S.duration - pre, pre, { origOff: st.A + S.duration - pre })
+      segment(t, S, 0, pre, { origOff: st.A })
+      return
+    }
     const pre = Math.min(3, st.B - st.A)
-    t = segment(t, st.B - pre, pre, false, true)
-    segment(t, st.A, pre, true, false)
+    t = segment(t, buf, st.B - pre, pre, { fadeOut: true })
+    segment(t, buf, st.A, pre, { fadeIn: true })
   }
   async function playLoops(n, withIntro) {
-    let t = await startPlayback(view)
-    if (withIntro) t = segment(t, 0, st.B, false, true)
-    for (let k = 0; k < n; k++) t = segment(t, st.A, st.B - st.A, true, true)
+    let t = await startPlayback(view, { rendered: locked })
+    if (locked) {
+      if (withIntro && view.intro) t = segment(t, view.intro, 0, view.intro.duration, { origOff: 0 })
+      for (let k = 0; k < n; k++) t = segment(t, view.song, 0, view.song.duration, { origOff: st.A })
+      return
+    }
+    if (withIntro) t = segment(t, buf, 0, st.B, { fadeOut: true })
+    for (let k = 0; k < n; k++) t = segment(t, buf, st.A, st.B - st.A, { fadeIn: true, fadeOut: true })
   }
   async function playFrom(sec) {
     const t = await startPlayback(view)
     const off = Math.max(0, Math.min(sec, buf.duration - 0.01))
-    segment(t, off, buf.duration - off, false, false)
+    segment(t, buf, off, buf.duration - off)
   }
 
   function edited(seam) {
@@ -352,9 +388,11 @@ function bindTune(view) {
     cv.addEventListener('pointerup', end)
     cv.addEventListener('pointercancel', end)
   }
-  bindDrag('wave', (t) => (Math.abs(t - st.A) < Math.abs(t - st.B) ? 'A' : 'B'))
-  bindDrag('za', () => 'A')
-  bindDrag('zb', () => 'B')
+  if (!locked) {
+    bindDrag('wave', (t) => (Math.abs(t - st.A) < Math.abs(t - st.B) ? 'A' : 'B'))
+    bindDrag('za', () => 'A')
+    bindDrag('zb', () => 'B')
+  }
   q('.wave').addEventListener('dblclick', (ev) => {
     const rc = q('.wave').getBoundingClientRect()
     playFrom(((ev.clientX - rc.left) / rc.width) * dur)
@@ -384,13 +422,16 @@ function bindTune(view) {
   q('.full').onclick = () => playLoops(2, true)
   q('.loop3').onclick = () => playLoops(3, false)
   q('.stp').onclick = stopPlayback
+  if (locked) el.querySelectorAll('.tune [data-m], .tune [data-snap], .tune input').forEach((x) => { x.disabled = true })
 
   showValues()
   view.drawAll()
 }
 
 // ---- saving ----
-const editBody = (view) => view.st && { A: round3(view.st.A), B: round3(view.st.B), fadeMs: view.st.fadeMs, sliderDb: view.st.sliderDb, withIntro: view.st.withIntro }
+const editBody = (view) => view.st && {
+  ...cutToSave(view.st, view.card.durationSec), fadeMs: view.st.fadeMs, sliderDb: view.st.sliderDb, withIntro: view.st.withIntro,
+}
 
 function queueSave(view) {
   view.dirty = true
@@ -430,7 +471,7 @@ async function runAction(view, act) {
     let card
     if (act === 'next' || act === 'retry') card = await api(`/api/cards/${id}/${act}`, {})
     else if (act === 'url') card = await api(`/api/cards/${id}/url`, { url: view.el.querySelector('.url').value.trim() })
-    else card = await api(`/api/cards/${id}`, { ...(act === 'skipped' ? {} : editBody(view)), status: act })
+    else card = await api(`/api/cards/${id}`, { ...editBody(view), status: act })
     if (player.view === view) stopPlayback()
     view.dirty = false
     view.saveError = null
@@ -450,6 +491,9 @@ function replaceCard(card) {
   views.set(card.playerId, view)
   if (old) {
     if (player.view === old) stopPlayback()
+    lazyLoader.unobserve(old.el)
+    // A new download (換版本／貼網址／重試) replaces the original: free the old decoded audio.
+    if (old.card.original && old.card.original !== card.original) buffers.delete(old.card.original)
     old.el.replaceWith(view.el)
   } else document.getElementById('cards').appendChild(view.el)
   applyFilter()
@@ -502,9 +546,9 @@ async function refresh() {
 document.getElementById('filter').onchange = applyFilter
 
 document.getElementById('submit').onclick = async () => {
-  const names = [...views.values()].filter((v) => v.card.status === 'resolved').map((v) => `${v.card.team} - ${v.card.name}`)
+  const names = submitNames([...views.values()].map((v) => v.card))
   const out = document.getElementById('summary')
-  if (!names.length) { out.innerHTML = '<div class="box">沒有已解決的卡片。</div>'; return }
+  if (!names.length) { out.innerHTML = '<div class="box">沒有尚未上傳的已解決卡片。</div>'; return }
   if (!confirm(`將產生成品、上傳 Dropbox 並寫入資料庫，共 ${names.length} 筆：\n\n${names.join('\n')}\n\n確定送出？`)) return
   const btn = document.getElementById('submit')
   btn.disabled = true
@@ -512,7 +556,9 @@ document.getElementById('submit').onclick = async () => {
   try {
     const r = await api('/api/submit', {})
     const list = (items, f) => (items?.length ? `<ul>${items.map((x) => `<li>${esc(x.name)}：${esc(f(x))}</li>`).join('')}</ul>` : '')
-    out.innerHTML = `<div class="box"><b>送出完成</b>：上傳 ${r.uploaded ?? 0} 首，跳過 ${r.skipped?.length ?? 0} 筆，失敗 ${r.failed?.length ?? 0} 筆
+    const uploaded = r.uploaded ?? []
+    out.innerHTML = `<div class="box"><b>送出完成</b>：上傳 ${uploaded.length} 首，跳過 ${r.skipped?.length ?? 0} 筆，失敗 ${r.failed?.length ?? 0} 筆
+      ${uploaded.length ? `<div>上傳：</div><ul>${uploaded.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
       ${r.skipped?.length ? `<div>跳過：</div>${list(r.skipped, (x) => x.reason)}` : ''}
       ${r.failed?.length ? `<div class="err">失敗：</div>${list(r.failed, (x) => x.error)}` : ''}</div>`
   } catch (e) {
