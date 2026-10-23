@@ -1,5 +1,6 @@
 import { parse } from 'node-html-parser'
 import { loadEnv, createServiceClient } from './lib/env.mjs'
+import { POSITION_CATEGORY_MAP, POSITION_EN_MAP } from './lib/cpblClient.mjs'
 
 const BASE_URL = 'https://www.cpbl.com.tw'
 
@@ -11,32 +12,6 @@ const TEAMS = [
   { code: 'AAA', name: '味全龍' },
   { code: 'AKP', name: '台鋼雄鷹' },
 ]
-
-// 守位分類對應（球隊頁面的粗分類，用於跳過教練）
-const POSITION_CATEGORY_MAP = {
-  '投手': 'P',
-  '捕手': 'C',
-  '內野手': 'IF',
-  '外野手': 'OF',
-  '指定打擊': 'DH',
-  '教練': 'COACH',
-}
-
-// 詳細守位中英對照（球員個人頁面的「位置」欄位）
-const POSITION_EN_MAP = {
-  '投手': 'P',
-  '捕手': 'C',
-  '一壘手': '1B',
-  '二壘手': '2B',
-  '三壘手': '3B',
-  '游擊手': 'SS',
-  '左外野手': 'LF',
-  '中外野手': 'CF',
-  '右外野手': 'RF',
-  '外野手': 'OF',
-  '內野手': 'IF',
-  '指定打擊': 'DH',
-}
 
 loadEnv()
 const supabase = createServiceClient()
