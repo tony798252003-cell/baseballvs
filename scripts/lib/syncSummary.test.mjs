@@ -31,3 +31,8 @@ test('update tally counts patched fields so a surprising mass change is visible 
   })
   assert.match(out, /更新欄位：league 2、status 1/)
 })
+
+test('summary reports how many player-coach duplicates were dropped', () => {
+  const out = buildSummary({ plan: empty, dedupedCoaches: [{ name: '林哲瑄' }] })
+  assert.match(out, /去重（球員兼教練，保留球員列）1：林哲瑄/)
+})

@@ -5,6 +5,7 @@ import { loadEnv, createServiceClient } from './lib/env.mjs'
 import { createCpblSession, parseTeamPage, parsePersonPage } from './lib/cpblClient.mjs'
 import { planRosterSync, checkSafetyValve } from './lib/rosterSync.mjs'
 import { matchUnkeyed } from './lib/playerMerge.mjs'
+import { dropShadowedCoaches } from './lib/dedupeScraped.mjs'
 import { buildSummary } from './lib/syncSummary.mjs'
 import { TEAMS } from '../src/constants/teams.js'
 
@@ -107,7 +108,8 @@ async function apply({ updates, inserts, departures }) {
 async function main() {
   console.log(`CPBL 名單同步（${APPLY ? '--apply 寫入模式' : 'dry run，不寫入'}）\n`)
   const session = await createCpblSession()
-  const { scraped, pageCounts } = await fetchRosters(session)
+  const { scraped: rawScraped, pageCounts } = await fetchRosters(session)
+  const { kept: scraped, dropped: dedupedCoaches } = dropShadowedCoaches(rawScraped)
 
   const valve = checkSafetyValve(pageCounts, readPreviousCounts())
   if (!valve.ok) {
@@ -127,7 +129,7 @@ async function main() {
   for (const [id, key] of linkById) patches.set(id, { cpbl_acnt: key, ...patches.get(id) })
   const updates = [...patches].map(([id, patch]) => ({ id, patch }))
 
-  console.log(`\n${buildSummary({ plan, links: matches, ambiguous, pageCounts })}\n`)
+  console.log(`\n${buildSummary({ plan, links: matches, ambiguous, pageCounts, dedupedCoaches })}\n`)
 
   if (!APPLY) {
     console.log('dry run 結束（未寫入、未抓球員個人頁）。加 --apply 才會寫入。')
