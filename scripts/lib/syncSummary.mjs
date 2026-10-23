@@ -5,6 +5,10 @@ export function buildSummary({ plan, links = [], ambiguous = [], pageCounts = {}
   const lines = []
   lines.push(`頁面人數：${Object.entries(pageCounts).map(([k, n]) => `${k}=${n}`).join(' ')}`)
   lines.push(`新增 ${plan.inserts.length}、更新 ${plan.updates.length}、離隊 ${plan.departures.length}、回鍋 ${plan.returns.length}、換隊 ${plan.transfers.length}、補 cpbl_acnt ${links.length}`)
+  const tally = {}
+  for (const u of plan.updates) for (const f of Object.keys(u.patch)) tally[f] = (tally[f] ?? 0) + 1
+  const fields = Object.entries(tally).sort((a, b) => b[1] - a[1])
+  if (fields.length) lines.push(`更新欄位：${fields.map(([f, n]) => `${f} ${n}`).join('、')}`)
   if (plan.inserts.length) lines.push(`新增：${plan.inserts.map((i) => i.name ?? i.cpbl_acnt).join('、')}`)
   if (plan.transfers.length) lines.push(`換隊：${plan.transfers.map((t) => `${t.name}(${t.from}→${t.to})`).join('、')}`)
   if (plan.departures.length) lines.push(`離隊：${plan.departures.map((d) => `${d.name}(${d.team})`).join('、')}`)

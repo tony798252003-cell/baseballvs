@@ -24,3 +24,10 @@ test('empty plan prints zero counts and no name sections', () => {
   assert.match(out, /新增 0、更新 0、離隊 0/)
   assert.doesNotMatch(out, /離隊：/)
 })
+
+test('update tally counts patched fields so a surprising mass change is visible before --apply', () => {
+  const out = buildSummary({
+    plan: { ...empty, updates: [{ id: 1, patch: { league: '二軍', status: 'active' } }, { id: 2, patch: { league: '一軍' } }] },
+  })
+  assert.match(out, /更新欄位：league 2、status 1/)
+})

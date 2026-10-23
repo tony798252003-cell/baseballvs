@@ -68,8 +68,16 @@ async function enrichInserts(session, inserts) {
   const withKey = inserts.filter((i) => i.cpbl_acnt)
   for (let i = 0; i < withKey.length; i++) {
     const ins = withKey[i]
-    const res = await session.get(`/team/person?Acnt=${ins.cpbl_acnt}`)
-    const person = res.status === 200 ? parsePersonPage(res.html) : null
+    let person = null
+    let why = ''
+    try {
+      const res = await session.get(`/team/person?Acnt=${ins.cpbl_acnt}`)
+      person = res.status === 200 ? parsePersonPage(res.html) : null
+      if (!person) why = res.status === 200 ? '頁面解析失敗' : `HTTP ${res.status}`
+    } catch (e) {
+      why = e.message
+    }
+    if (why) console.warn(`\n  警告：${ins.name} (Acnt=${ins.cpbl_acnt}) 球員頁無法取得（${why}），略過投打手/守位`)
     if (person?.isPlayer) {
       for (const f of ['pitching_hand', 'batting_hand', 'main_position']) if (person[f] !== undefined) ins[f] = person[f]
     }
@@ -86,7 +94,7 @@ async function apply({ updates, inserts, departures }) {
     check(error, `update player ${u.id}`)
   }
   for (let i = 0; i < inserts.length; i += BATCH) {
-    const { error } = await supabase.from('players').insert(inserts.slice(i, i + BATCH))
+    const { error } = await supabase.from('players').insert(inserts.slice(i, i + BATCH), { defaultToNull: false })
     check(error, `insert players batch ${i / BATCH}`)
   }
   const ids = departures.map((d) => d.id)
