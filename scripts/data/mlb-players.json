@@ -5,7 +5,6 @@
   { "name": "今永昇太", "number": "21", "team": "芝加哥小熊", "main_position": "P", "pitching_hand": "左", "batting_hand": "左", "mlbId": 680776 },
   { "name": "鈴木誠也", "number": "51", "team": "芝加哥小熊", "main_position": "RF", "pitching_hand": "右", "batting_hand": "右", "mlbId": 673548 },
   { "name": "千賀滉大", "number": "92", "team": "紐約大都會", "main_position": "P", "pitching_hand": "右", "batting_hand": "右", "mlbId": 677651 },
-  { "name": "江少慶", "number": "71", "team": "紐約大都會", "main_position": "P", "pitching_hand": "右", "batting_hand": "右", "mlbId": 650895 },
   { "name": "平良海馬", "number": "34", "team": "紐約洋基", "main_position": "P", "pitching_hand": "右", "batting_hand": "右", "mlbId": 681911 },
   { "name": "吉田正尚", "number": "7", "team": "波士頓紅襪", "main_position": "LF", "pitching_hand": "右", "batting_hand": "左", "mlbId": 673237 },
   { "name": "鄭宗哲", "number": "1", "team": "波士頓紅襪", "main_position": "SS", "pitching_hand": "右", "batting_hand": "左" },
@@ -16,6 +15,5 @@
   { "name": "陳柏毓", "number": "44", "team": "匹茲堡海盜", "main_position": "P", "pitching_hand": "右", "batting_hand": "左" },
   { "name": "林昱珉", "number": "45", "team": "亞利桑那響尾蛇", "main_position": "P", "pitching_hand": "左", "batting_hand": "左" },
   { "name": "Stuart Fairchild", "number": "17", "team": "克利夫蘭守護者", "main_position": "CF", "pitching_hand": "右", "batting_hand": "右", "mlbId": 663821 },
-  { "name": "陳偉殷", "number": "16", "team": "自由球員", "main_position": "P", "pitching_hand": "左", "batting_hand": "左", "mlbId": 453568 },
-  { "name": "林家正", "number": "27", "team": "自由球員", "main_position": "C", "pitching_hand": "右", "batting_hand": "右" }
+  { "name": "陳偉殷", "number": "16", "team": "自由球員", "main_position": "P", "pitching_hand": "左", "batting_hand": "左", "mlbId": 453568 }
 ]
