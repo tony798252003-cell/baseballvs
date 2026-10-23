@@ -22,9 +22,9 @@ export function newState(next = 1) {
   return { next, found: [], highestValid: 0, invalidRun: 0 }
 }
 
-// 無效 Acnt 會連續出現；超過最高有效 id 後連續 N 個無效即視為掃完
+// 無效 Acnt 會連續出現；至少見過一個有效 id、之後連續 N 個無效才視為掃完（還沒有任何有效 id 時不停）
 export function shouldStop(state, limit = STOP_AFTER_INVALID) {
-  return state.invalidRun >= limit
+  return state.highestValid > 0 && state.invalidRun >= limit
 }
 
 // 純函式：記錄單一 id 的結果並把 next 往前推
@@ -59,17 +59,55 @@ export function parseArgs(argv) {
   return args
 }
 
-// 把掃到的人分成：DB 已有（略過）、可與無 acnt 的舊資料同名配對（補 acnt）、同名多筆（人工判斷）、全新（插入）
+// 把掃到的人分成：DB 已有（略過）、可與無 acnt 的舊資料配對（補 acnt）、需人工判斷（ambiguous）、全新（插入）
+// 只憑姓名辨識身分太弱，所以只在「掃到的頁面同名只有一個、未綁 acnt 的 DB 列同名也只有一列、且該列不是教練」時才自動配對
 export function planBackfill(found, dbRows) {
   const known = new Set(dbRows.map(r => r.cpbl_acnt).filter(Boolean))
   const fresh = found.filter(f => !known.has(f.cpbl_acnt))
-  const { matches, ambiguous } = matchUnkeyed(dbRows, fresh.map(f => ({ key: f.cpbl_acnt, name: f.name })), { org: 'CPBL', keyField: 'cpbl_acnt' })
-  const handled = new Set([...matches.map(m => m.key), ...ambiguous.flatMap(a => fresh.filter(f => f.name === a.name).map(f => f.cpbl_acnt))])
+  const freshByName = Map.groupBy(fresh, f => f.name)
+  const rowById = new Map(dbRows.map(r => [String(r.id), r]))
+  const { matches: rawMatches, ambiguous: rawAmbiguous } = matchUnkeyed(dbRows, fresh.map(f => ({ key: f.cpbl_acnt, name: f.name })), { org: 'CPBL', keyField: 'cpbl_acnt' })
+
+  const ambiguous = new Map() // name -> { name, candidates, acnts }
+  const flag = (name, candidates) => ambiguous.set(name, { name, candidates, acnts: freshByName.get(name).map(f => f.cpbl_acnt) })
+  for (const a of rawAmbiguous) flag(a.name, a.candidates)
+  const matches = []
+  for (const m of rawMatches) {
+    const name = fresh.find(f => f.cpbl_acnt === m.key).name
+    if (freshByName.get(name).length > 1 || rowById.get(String(m.id)).is_coach) flag(name, [String(m.id)])
+    else matches.push(m)
+  }
+  const linked = new Set(matches.map(m => m.key))
   return {
     skipped: found.length - fresh.length,
     matches,
-    ambiguous,
-    inserts: fresh.filter(f => !handled.has(f.cpbl_acnt)).map(buildRow),
+    ambiguous: [...ambiguous.values()],
+    inserts: fresh.filter(f => !linked.has(f.cpbl_acnt) && !ambiguous.has(f.name)).map(buildRow),
+  }
+}
+
+// 單一 id 的抓取。回傳 person，或 null（有正面證據的無效 id：被導向離開 /team/person）。
+// 200 但仍在 /team/person 卻解析不出來（CDN 攔截頁等）不是無效：換 session 重抓，仍不行就丟錯中止
+export async function fetchPerson(id, ctx) {
+  const { createSession, sleep = () => {}, attempts = FETCH_ATTEMPTS } = ctx
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await ctx.session.get(`/team/person?Acnt=${formatAcnt(id)}`)
+      if (res.status === 200) {
+        const person = parsePersonPage(res.html)
+        if (person) return person
+        if (new URL(res.url).pathname !== '/team/person') return null
+        console.warn(`Acnt ${formatAcnt(id)}: 頁面無法解析（仍在 /team/person），重建 session`)
+      } else {
+        console.warn(`Acnt ${formatAcnt(id)}: HTTP ${res.status}，重建 session`)
+      }
+    } catch (e) {
+      console.warn(`Acnt ${formatAcnt(id)}: ${e.message}，重建 session`)
+    }
+    // 不可把失敗當成「無效 id」，否則會錯過真實球員
+    if (attempt >= attempts) throw new Error(`Acnt ${formatAcnt(id)}: ${attempts} 次失敗，中止（進度已保存，可續跑）`)
+    await sleep(REQUEST_INTERVAL_MS * attempt * 2)
+    ctx.session = await createSession()
   }
 }
 
@@ -94,25 +132,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   let state = loadProgress(args.progress) ?? newState()
-  if (args.start !== null) state = { ...state, next: args.start }
+  if (args.start !== null) state = { ...state, next: args.start, invalidRun: 0 }
   console.log(`起點 Acnt=${formatAcnt(state.next)}，已找到 ${state.found.length} 筆，最高有效 ${state.highestValid}，連續無效 ${state.invalidRun}${args.apply ? '（--apply）' : '（dry run）'}`)
 
-  let session = await createCpblSession()
-  const fetchPerson = async id => {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        const res = await session.get(`/team/person?Acnt=${formatAcnt(id)}`)
-        if (res.status === 200) return parsePersonPage(res.html)
-        console.warn(`Acnt ${formatAcnt(id)}: HTTP ${res.status}，重建 session`)
-      } catch (e) {
-        console.warn(`Acnt ${formatAcnt(id)}: ${e.message}，重建 session`)
-      }
-      // 不可把失敗當成「無效 id」，否則會錯過真實球員
-      if (attempt >= FETCH_ATTEMPTS) throw new Error(`Acnt ${formatAcnt(id)}: ${FETCH_ATTEMPTS} 次失敗，中止（進度已保存，可續跑）`)
-      await sleep(REQUEST_INTERVAL_MS * attempt * 2)
-      session = await createCpblSession()
-    }
-  }
+  const ctx = { session: await createCpblSession(), createSession: createCpblSession, sleep }
 
   // Ctrl-C / kill：處理完手上這個 id、存檔後再結束，避免丟掉未滿 25 個的進度
   let interrupted = false
@@ -122,7 +145,7 @@ async function main() {
   try {
     while (!interrupted && !shouldStop(state) && processed < args.limit) {
       const id = state.next
-      const person = await fetchPerson(id)
+      const person = await fetchPerson(id, ctx)
       state = advanceState(state, id, person)
       processed++
       console.log(`${formatAcnt(id)} ${person ? `${person.name}${person.isPlayer ? '' : '（非球員）'}` : '-'}`)
@@ -146,7 +169,7 @@ async function main() {
 
   loadEnv()
   const supabase = createServiceClient()
-  const dbRows = await fetchAllPages(() => supabase.from('players').select('id, name, org, cpbl_acnt').eq('org', 'CPBL').order('id'))
+  const dbRows = await fetchAllPages(() => supabase.from('players').select('id, name, org, cpbl_acnt, is_coach').eq('org', 'CPBL').order('id'))
   const plan = planBackfill(state.found, dbRows)
   console.log(`找到 ${state.found.length}；DB 已有 ${plan.skipped}；配對舊資料補 acnt ${plan.matches.length}；同名待判斷 ${plan.ambiguous.length}；新增 ${plan.inserts.length}`)
 
