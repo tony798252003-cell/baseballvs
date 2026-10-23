@@ -16,7 +16,7 @@ import { TARGET_LUFS, computeGainDb, decodeDurationSec, decodePcm, findBinary, m
 import { getDropboxAccessToken, getSharedLinkRawUrl, uploadToDropbox } from './lib/dropboxMusicSync.mjs'
 import { suggestCut } from './lib/cutSuggest.mjs'
 import { STUDIO_DIR, batchName, loadState, mergePlayers, saveState } from './lib/studioState.mjs'
-import { submitApproved } from './lib/studioSubmit.mjs'
+import { createSubmitter, submitApproved } from './lib/studioSubmit.mjs'
 import {
   applyCardEdit, checkRequest, chooseNextCandidate, mediaPath, nextCardId, retryCard, runPipeline, safeJoin, selectPlayers,
   useCustomUrl,
@@ -138,34 +138,37 @@ function kick() {
 }
 
 // ---- 送出（一次只跑一個）：重新讀資料庫 → 產生成品 → 上傳 Dropbox → 只寫 song／intro ----
-let submitting = null // null | { current: cardId | null }
 async function readPlayer(id) {
   const { data, error } = await supabase.from('players').select('id, name, team, song, intro').eq('id', id).maybeSingle()
   if (error) throw new Error(`讀取球員失敗：${error.message}`)
   return data
 }
+async function findNameConflict({ id, team, name }) {
+  const { data, error } = await supabase.from('players').select('id, song, intro').eq('team', team).eq('name', name).neq('id', id)
+  if (error) throw new Error(`檢查同名球員失敗：${error.message}`)
+  return data.some((r) => [r.song, r.intro].some((v) => v != null && String(v).trim() !== ''))
+}
+// Conditional write: only while every patched column is still null/empty; returns the number of rows written.
 async function writePlayer(id, patch) {
-  const { error } = await supabase.from('players').update(patch).eq('id', id)
+  const stillEmpty = Object.keys(patch).map((k) => `or(${k}.is.null,${k}.eq.)`).join(',')
+  const { data, error } = await supabase.from('players').update(patch).eq('id', id).or(`and(${stillEmpty})`).select('id')
   if (error) throw new Error(`寫入資料庫失敗：${error.message}`)
+  return data.length
 }
-async function submit() {
-  submitting = { current: null }
-  try {
-    const summary = await submitApproved(state, {
-      readPlayer,
-      writePlayer,
-      render: renderPair,
-      upload: async (local, remote) => uploadToDropbox(await getDropboxAccessToken(), local, remote),
-      link: async (remote) => getSharedLinkRawUrl(await getDropboxAccessToken(), remote),
-      save,
-      log: (msg) => console.log(msg),
-    }, { busyId: processing, onStart: (id) => { submitting.current = id } })
-    console.log(`送出完成：上傳 ${summary.uploaded.length}、跳過 ${summary.skipped.length}、失敗 ${summary.failed.length}`)
-    return summary
-  } finally {
-    submitting = null
-  }
-}
+const submitter = createSubmitter(async (onStart) => {
+  const summary = await submitApproved(state, {
+    readPlayer,
+    findNameConflict,
+    writePlayer,
+    render: renderPair,
+    upload: async (local, remote) => uploadToDropbox(await getDropboxAccessToken(), local, remote),
+    link: async (remote) => getSharedLinkRawUrl(await getDropboxAccessToken(), remote),
+    save,
+    log: (msg) => console.log(msg),
+  }, { busyId: processing, onStart })
+  console.log(`送出完成：上傳 ${summary.uploaded.length}、跳過 ${summary.skipped.length}、失敗 ${summary.failed.length}`)
+  return summary
+})
 
 // ---- HTTP ----
 const sendJson = (res, code, body) => {
@@ -221,8 +224,8 @@ async function handle(req, res) {
   if (req.method === 'GET' && path.startsWith('/media/')) return sendFile(res, mediaPath(STUDIO_DIR, batch, path.slice('/media/'.length)))
   if (req.method === 'POST' && path === '/api/submit') {
     await readJson(req)
-    if (submitting) return sendJson(res, 409, { error: '送出進行中，請稍候' })
-    return sendJson(res, 200, await submit())
+    const { status, body } = await submitter.request()
+    return sendJson(res, status, body)
   }
 
   const m = /^\/api\/cards\/([^/]+)(?:\/(next|url|retry))?$/.exec(path)
@@ -231,7 +234,7 @@ async function handle(req, res) {
     if (!card) return sendJson(res, 404, { error: '找不到這張卡片' })
     const body = await readJson(req)
     // Checked after the body is read so the check and the mutation below run without an await in between.
-    if (processing === m[1] || submitting?.current === m[1]) return sendJson(res, 409, { error: '這張卡片正在處理中，請稍候' })
+    if (processing === m[1] || submitter.currentId() === m[1]) return sendJson(res, 409, { error: '這張卡片正在處理中，請稍候' })
     const error = m[2] ? CARD_ACTIONS[m[2]](card, body) : applyCardEdit(card, body)
     if (error) return sendJson(res, 400, { error })
     save(state)

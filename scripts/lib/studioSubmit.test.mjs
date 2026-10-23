@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { submitApproved } from './studioSubmit.mjs'
+import { createSubmitter, submitApproved } from './studioSubmit.mjs'
 
 const card = (id, over = {}) => ({
   playerId: id, name: `卡片名${id}`, team: '卡片隊', status: 'resolved', original: `b/orig/${id}-v.mp3`,
@@ -15,13 +15,14 @@ const fakes = (db, over = {}) => {
     calls,
     deps: {
       readPlayer: async (id) => db[id] ?? null,
+      findNameConflict: async () => false,
       render: async (opts) => {
         calls.render.push(opts)
         return { songPath: `${opts.outDir}/song.mp3`, introPath: opts.withIntro ? `${opts.outDir}/intro.mp3` : null }
       },
       upload: async (local, remote) => { calls.upload.push([local, remote]) },
       link: async (remote) => `https://dl/${encodeURIComponent(remote)}?raw=1`,
-      writePlayer: async (id, patch) => { calls.writes.push([id, patch]) },
+      writePlayer: async (id, patch) => { calls.writes.push([id, patch]); return 1 },
       save: async () => { calls.saves++ },
       log: () => {},
       ...over,
@@ -122,4 +123,108 @@ test('a player missing from the DB is a failure, not a crash', async () => {
   const { deps } = fakes({})
   const summary = await submitApproved(stateOf(card('9')), deps, opts)
   assert.deepEqual(summary.failed, [{ name: '卡片隊 - 卡片名9', error: '資料庫找不到這位球員' }])
+})
+
+test('DB song filled between re-read and write (0 rows written) -> failed, card not marked uploaded', async () => {
+  // The conditional write is the last guard against overwriting a song; 0 rows must not look like success.
+  const state = stateOf(card('1'), card('2'))
+  const { deps } = fakes({ 1: dbRow('1'), 2: dbRow('2') }, { writePlayer: async (id) => (id === '1' ? 0 : 1) })
+  const summary = await submitApproved(state, deps, opts)
+  assert.deepEqual(summary.failed, [{ name: '樂天桃猿 - 球員1', error: '寫入前歌曲已被填入，未寫入' }])
+  assert.equal(state.cards['1'].uploaded, undefined)
+  assert.deepEqual(summary.uploaded, ['樂天桃猿 - 球員2'])
+})
+
+test('DB intro filled between re-read and write -> song written alone, intro reported skipped', async () => {
+  // An intro conflict must not cost the player the missing song, nor overwrite the new intro.
+  const state = stateOf(card('1', { withIntro: true }))
+  const f = fakes({ 1: dbRow('1') }, {
+    writePlayer: async (id, patch) => { f.calls.writes.push([id, patch]); return patch.intro ? 0 : 1 },
+  })
+  const summary = await submitApproved(state, f.deps, opts)
+  assert.deepEqual(f.calls.writes.map(([, p]) => Object.keys(p)), [['song', 'intro'], ['song']])
+  assert.deepEqual(summary.uploaded, ['樂天桃猿 - 球員1'])
+  assert.deepEqual(summary.skipped, [{ name: '樂天桃猿 - 球員1', reason: '已有 intro，略過前奏' }])
+  assert.equal(state.cards['1'].uploaded.intro, null)
+})
+
+test('both song and intro filled meanwhile -> failed after the song-only retry also writes 0 rows', async () => {
+  // The retry without intro is still conditional on song, so a filled song is never overwritten.
+  const state = stateOf(card('1', { withIntro: true }))
+  const { deps } = fakes({ 1: dbRow('1') }, { writePlayer: async () => 0 })
+  const summary = await submitApproved(state, deps, opts)
+  assert.deepEqual(summary.failed, [{ name: '樂天桃猿 - 球員1', error: '寫入前歌曲已被填入，未寫入' }])
+  assert.equal(state.cards['1'].uploaded, undefined)
+})
+
+test('another same-team same-name player with a file -> failed before render/upload', async () => {
+  // Same team+name is the same Dropbox path; uploading would overwrite the other player's song.
+  const state = stateOf(card('1'))
+  const { calls, deps } = fakes({ 1: dbRow('1') }, { findNameConflict: async (p) => p.id === 1 })
+  const summary = await submitApproved(state, deps, opts)
+  assert.deepEqual(summary.failed, [{ name: '樂天桃猿 - 球員1', error: '同隊同名球員已有檔案，未上傳' }])
+  assert.deepEqual([calls.render.length, calls.upload.length, calls.writes.length], [0, 0, 0])
+})
+
+test('team/name with a slash, surrounding whitespace or a trailing dot -> failed, nothing uploaded', async () => {
+  // Such names would change the Dropbox path (subfolder, trimmed or mangled filename).
+  const db = { 1: dbRow('1', { name: 'A/B' }), 2: dbRow('2', { name: ' 乙' }), 3: dbRow('3', { team: '樂天桃猿.' }), 4: dbRow('4', { name: '丁 ' }) }
+  const { calls, deps } = fakes(db)
+  const summary = await submitApproved(stateOf(card('1'), card('2'), card('3'), card('4')), deps, opts)
+  assert.deepEqual(summary.failed.map((f) => f.error), Array(4).fill('檔名含不允許的字元'))
+  assert.equal(calls.upload.length, 0)
+})
+
+test('state save failing after the DB write is reported distinctly and keeps uploaded in memory', async () => {
+  // The DB already has the song; the card must not be re-uploaded by a retry in this session.
+  const state = stateOf(card('1'))
+  const { deps } = fakes({ 1: dbRow('1') }, { save: async () => { throw new Error('disk full') } })
+  const summary = await submitApproved(state, deps, opts)
+  assert.deepEqual(summary.failed, [{ name: '樂天桃猿 - 球員1', error: '已寫入資料庫，但狀態存檔失敗：disk full' }])
+  assert.deepEqual(summary.uploaded, [])
+  assert.ok(state.cards['1'].uploaded.song)
+})
+
+test('a DB write error -> failed, not marked uploaded, next card continues', async () => {
+  // A transient DB error on one player must not lose the rest of the batch.
+  const state = stateOf(card('1'), card('2'))
+  const f = fakes({ 1: dbRow('1'), 2: dbRow('2') }, {
+    writePlayer: async (id, patch) => {
+      if (id === '1') throw new Error('寫入資料庫失敗：timeout')
+      f.calls.writes.push([id, patch])
+      return 1
+    },
+  })
+  const summary = await submitApproved(state, f.deps, opts)
+  assert.deepEqual(summary.failed, [{ name: '樂天桃猿 - 球員1', error: '寫入資料庫失敗：timeout' }])
+  assert.equal(state.cards['1'].uploaded, undefined)
+  assert.deepEqual(summary.uploaded, ['樂天桃猿 - 球員2'])
+})
+
+test('createSubmitter answers 409 while a submit runs and exposes the card in progress', async () => {
+  // Two overlapping submits would upload/write the same cards twice.
+  let release, started
+  const startedP = new Promise((r) => { started = r })
+  const submitter = createSubmitter(async (onStart) => {
+    onStart('7')
+    started()
+    await new Promise((r) => { release = r })
+    return { uploaded: ['x'], skipped: [], failed: [] }
+  })
+  const first = submitter.request()
+  await startedP
+  assert.equal(submitter.currentId(), '7')
+  assert.deepEqual(await submitter.request(), { status: 409, body: { error: '送出進行中，請稍候' } })
+  release()
+  assert.deepEqual(await first, { status: 200, body: { uploaded: ['x'], skipped: [], failed: [] } })
+  assert.equal(submitter.currentId(), null)
+})
+
+test('createSubmitter frees the lock when a submit throws', async () => {
+  // A crashed submit must not leave the page stuck on 409 forever.
+  let fail = true
+  const submitter = createSubmitter(async () => { if (fail) throw new Error('boom'); return 'ok' })
+  await assert.rejects(submitter.request(), /boom/)
+  fail = false
+  assert.deepEqual(await submitter.request(), { status: 200, body: 'ok' })
 })
