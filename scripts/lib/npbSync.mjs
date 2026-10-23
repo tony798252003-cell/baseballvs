@@ -25,6 +25,13 @@ export function matchNpbUnkeyed(dbRows, scraped, { org = 'NPB', keyField = 'npb_
 
 const isEmpty = (v) => v == null || v === ''
 
+// Ruling 18：比對後仍未綁 npb_id 的既有 NPB 球員列（Yahoo 名單上找不到）視為離隊；已離隊者不重複列出
+export function planUnlinkedDepartures(dbPlayers, linkedIds) {
+  return dbPlayers
+    .filter((r) => r.org === 'NPB' && isEmpty(r.npb_id) && !r.is_coach && !linkedIds.has(r.id) && r.status !== 'departed')
+    .map((r) => ({ id: r.id, name: r.name, team: r.team }))
+}
+
 // Ruling 16/17：既有列的 name 不改（DB 名字經人工整理）；DB 已有照片時不覆蓋；變空的更新直接丟棄
 export function filterNpbUpdates(updates, dbPlayers) {
   const byId = new Map(dbPlayers.map((r) => [r.id, r]))

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeNpbName, matchNpbUnkeyed, filterNpbUpdates, dedupeByKey } from './npbSync.mjs'
+import { normalizeNpbName, matchNpbUnkeyed, filterNpbUpdates, dedupeByKey, planUnlinkedDepartures } from './npbSync.mjs'
 
 const db = (id, name, extra = {}) => ({ id, name, org: 'NPB', npb_id: null, is_coach: false, ...extra })
 
@@ -34,4 +34,17 @@ test('dedupeByKey drops identical repeats and aborts on conflicting data for one
   const a = { key: '1', name: 'A', team: 'T' }
   assert.deepEqual(dedupeByKey([a, { ...a }]), [a])
   assert.throws(() => dedupeByKey([a, { ...a, team: 'U' }]), /重複且內容不同/)
+})
+
+// Ruling 18：Yahoo 名單找不到的舊 NPB 列不該繼續出現在現役名單
+test('planUnlinkedDepartures: unkeyed, unlinked active NPB players depart; linked, keyed, coach, other-org and already-departed rows do not', () => {
+  const rows = [
+    db(1, '林家正', { status: 'active', team: '北海道火腿鬥士' }),
+    db(2, '已綁', { status: 'active' }),
+    db(3, '有號', { status: 'active', npb_id: '99' }),
+    db(4, '教練', { status: 'active', is_coach: true }),
+    db(5, '中職', { status: 'active', org: 'CPBL' }),
+    db(6, '早走', { status: 'departed' }),
+  ]
+  assert.deepEqual(planUnlinkedDepartures(rows, new Set([2])), [{ id: 1, name: '林家正', team: '北海道火腿鬥士' }])
 })

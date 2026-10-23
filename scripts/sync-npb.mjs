@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { loadEnv, createServiceClient } from './lib/env.mjs'
 import { fetchNpbRoster, parseNpbRoster } from './lib/npbClient.mjs'
 import { planRosterSync, checkSafetyValve } from './lib/rosterSync.mjs'
-import { matchNpbUnkeyed, filterNpbUpdates, dedupeByKey } from './lib/npbSync.mjs'
+import { matchNpbUnkeyed, filterNpbUpdates, dedupeByKey, planUnlinkedDepartures } from './lib/npbSync.mjs'
 import { buildSummary } from './lib/syncSummary.mjs'
 import { TEAMS } from '../src/constants/teams.js'
 
@@ -100,15 +100,15 @@ async function main() {
   const updates = [...patches].map(([id, patch]) => ({ id, patch }))
 
   console.log(`\n${buildSummary({ plan, links: matches, ambiguous, pageCounts, keyField: 'npb_id' })}\n`)
-  const unlinked = dbPlayers.filter((r) => r.org === 'NPB' && !r.npb_id && !r.is_coach && !linkById.has(r.id))
-  console.log(`未綁定的既有 NPB 列（比對後仍無對應，需人工決定）${unlinked.length}：${unlinked.map((r) => `${r.name}(${r.team}, id=${r.id})`).join('、') || '無'}\n`)
+  const unlinked = planUnlinkedDepartures(dbPlayers, new Set(linkById.keys()))
+  console.log(`將標記離隊（既有 NPB 列比對後仍無對應）${unlinked.length}：${unlinked.map((r) => `${r.name}(${r.team}, id=${r.id})`).join('、') || '無'}\n`)
 
   if (!APPLY) {
     console.log('dry run 結束（未寫入）。加 --apply 才會寫入。')
     return
   }
 
-  await apply({ updates, inserts: plan.inserts, departures: plan.departures })
+  await apply({ updates, inserts: plan.inserts, departures: [...plan.departures, ...unlinked] })
   mkdirSync(COUNTS_DIR, { recursive: true })
   writeFileSync(COUNTS_FILE, JSON.stringify(pageCounts, null, 2))
   console.log(`完成，已寫入並更新 ${COUNTS_FILE}`)
