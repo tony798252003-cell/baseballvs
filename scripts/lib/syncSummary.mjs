@@ -1,0 +1,15 @@
+// Pure formatter for the roster sync summary (no I/O).
+const names = (list) => list.map((x) => x.name).join('、')
+
+export function buildSummary({ plan, links = [], ambiguous = [], pageCounts = {} }) {
+  const lines = []
+  lines.push(`頁面人數：${Object.entries(pageCounts).map(([k, n]) => `${k}=${n}`).join(' ')}`)
+  lines.push(`新增 ${plan.inserts.length}、更新 ${plan.updates.length}、離隊 ${plan.departures.length}、回鍋 ${plan.returns.length}、換隊 ${plan.transfers.length}、補 cpbl_acnt ${links.length}`)
+  if (plan.inserts.length) lines.push(`新增：${plan.inserts.map((i) => i.name ?? i.cpbl_acnt).join('、')}`)
+  if (plan.transfers.length) lines.push(`換隊：${plan.transfers.map((t) => `${t.name}(${t.from}→${t.to})`).join('、')}`)
+  if (plan.departures.length) lines.push(`離隊：${plan.departures.map((d) => `${d.name}(${d.team})`).join('、')}`)
+  if (plan.returns.length) lines.push(`回鍋：${names(plan.returns)}`)
+  if (plan.conflicts.length) lines.push(`衝突（同名多筆教練，略過）：${plan.conflicts.join('、')}`)
+  if (ambiguous.length) lines.push(`無法比對（同名多筆未綁定）：${ambiguous.map((a) => `${a.name}[${a.candidates.join(',')}]`).join('、')}`)
+  return lines.join('\n')
+}

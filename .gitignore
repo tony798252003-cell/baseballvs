@@ -27,3 +27,6 @@ dist-ssr
 
 # Brainstorming mockup scratch space
 .superpowers/
+
+# Sync safety-valve cache
+scripts/.cache/
