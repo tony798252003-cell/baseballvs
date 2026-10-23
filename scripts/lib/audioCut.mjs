@@ -122,7 +122,7 @@ export function buildRenderArgs({ src, out, start, end, fadeInMs = 0, fadeOutMs 
 
 // Renders every cut at ONE shared limiter ceiling, then verifies each file's true peak; if any is over,
 // lowers the shared ceiling by the worst overshoot and re-renders all of them. Returns the final ceiling.
-async function renderWithSharedCeiling(cuts) {
+export async function renderWithSharedCeiling(cuts) {
   let ceilingDb = LIMITER_CEILING_DB
   for (let attempt = 1; ; attempt++) {
     let worst = -Infinity
