@@ -63,6 +63,10 @@ export function parseLegacyFilename(filename) {
   return { number, name, isIntro }
 }
 
+// Dropbox-API-Arg must be "HTTP header-safe" JSON: non-ASCII (e.g. Chinese file names) escaped as \uXXXX.
+// fetch rejects header values with characters above U+00FF, so a raw JSON.stringify fails for such paths.
+export const headerSafeJson = (value) => JSON.stringify(value).replace(/[\u007f-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
+
 export async function listDropboxFolder(token, path) {
   const res = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
     method: 'POST',
@@ -86,7 +90,7 @@ export async function uploadToDropbox(token, localFilePath, dropboxPath) {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Dropbox-API-Arg': JSON.stringify({ path: dropboxPath, mode: 'overwrite', autorename: false, mute: true }),
+      'Dropbox-API-Arg': headerSafeJson({ path: dropboxPath, mode: 'overwrite', autorename: false, mute: true }),
       'Content-Type': 'application/octet-stream',
     },
     body: fileBuffer,
@@ -94,6 +98,31 @@ export async function uploadToDropbox(token, localFilePath, dropboxPath) {
   if (!res.ok) {
     throw new Error(`上傳失敗 (${dropboxPath}): ${res.status} ${await res.text()}`)
   }
+}
+
+// true when something exists at dropboxPath; false on path/not_found.
+export async function dropboxPathExists(token, dropboxPath) {
+  const res = await fetch('https://api.dropboxapi.com/2/files/get_metadata', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: dropboxPath }),
+  })
+  if (res.ok) return true
+  const body = await res.text()
+  if (res.status === 409 && body.includes('not_found')) return false
+  throw new Error(`查詢 Dropbox 檔案失敗 (${dropboxPath}): ${res.status} ${body}`)
+}
+
+// Downloads dropboxPath to localPath (via a .part file, so a broken download never looks like a backup).
+export async function downloadFromDropbox(token, dropboxPath, localPath) {
+  const fs = await import('node:fs')
+  const res = await fetch('https://content.dropboxapi.com/2/files/download', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': headerSafeJson({ path: dropboxPath }) },
+  })
+  if (!res.ok) throw new Error(`下載失敗 (${dropboxPath}): ${res.status} ${await res.text()}`)
+  fs.writeFileSync(`${localPath}.part`, Buffer.from(await res.arrayBuffer()))
+  fs.renameSync(`${localPath}.part`, localPath)
 }
 
 export async function moveDropboxFile(token, fromPath, toPath) {

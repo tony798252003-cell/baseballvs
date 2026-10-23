@@ -13,7 +13,9 @@ import { createServiceClient, loadEnv } from './lib/env.mjs'
 import { fetchAllPages } from '../src/lib/fetchAllPages.js'
 import { searchPlayer } from './lib/youtubeSearch.mjs'
 import { TARGET_LUFS, computeGainDb, decodeDurationSec, decodePcm, findBinary, measureLoudness, renderPair } from './lib/audioCut.mjs'
-import { getDropboxAccessToken, getSharedLinkRawUrl, uploadToDropbox } from './lib/dropboxMusicSync.mjs'
+import {
+  downloadFromDropbox, dropboxPathExists, getDropboxAccessToken, getSharedLinkRawUrl, uploadToDropbox,
+} from './lib/dropboxMusicSync.mjs'
 import { suggestCut } from './lib/cutSuggest.mjs'
 import { STUDIO_DIR, batchName, loadState, mergePlayers, saveState } from './lib/studioState.mjs'
 import { createSubmitter, submitApproved } from './lib/studioSubmit.mjs'
@@ -157,10 +159,14 @@ async function writePlayer(id, patch) {
 }
 const submitter = createSubmitter(async (onStart) => {
   const summary = await submitApproved(state, {
+    // No usable Dropbox token -> answer with the error right away instead of rendering every card first.
+    preflight: () => getDropboxAccessToken(),
     readPlayer,
     findNameConflict,
     writePlayer,
     render: renderPair,
+    remoteExists: async (remote) => dropboxPathExists(await getDropboxAccessToken(), remote),
+    downloadRemote: async (remote, local) => downloadFromDropbox(await getDropboxAccessToken(), remote, local),
     upload: async (local, remote) => uploadToDropbox(await getDropboxAccessToken(), local, remote),
     link: async (remote) => getSharedLinkRawUrl(await getDropboxAccessToken(), remote),
     save,

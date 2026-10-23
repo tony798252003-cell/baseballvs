@@ -1,9 +1,21 @@
 // 應援曲工作台送出：對已解決的卡片產生成品 → 上傳 Dropbox → 寫入 players.song／intro。外部動作全部由呼叫端注入。
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { computeGainDb } from './audioCut.mjs'
 import { STUDIO_DIR } from './studioState.mjs'
 
 const DROPBOX_DIR = '/Music/Players'
+const BACKUP_ROOT = '/Users/tonywang/orca/workspaces/baseballvs/backups'
+export const defaultBackupDir = () => join(BACKUP_ROOT, `studio-${new Date().toLocaleDateString('sv-SE')}`)
+
+// <dir>/<name>, or <dir>/<base>-1.mp3, -2, … when that backup already exists (an older backup is never overwritten).
+export function backupPathFor(dir, name) {
+  const dot = name.lastIndexOf('.')
+  const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+  let file = join(dir, name)
+  for (let n = 1; existsSync(file); n++) file = join(dir, `${base}-${n}${ext}`)
+  return file
+}
 const isEmpty = (v) => v == null || String(v).trim() === ''
 // A team/name that would change or escape the Dropbox path: slash, surrounding whitespace, trailing dot.
 const unsafeNamePart = (s) => typeof s !== 'string' || !s || s.includes('/') || s !== s.trim() || s.endsWith('.')
@@ -12,14 +24,37 @@ const unsafeNamePart = (s) => typeof s !== 'string' || !s || s.includes('/') || 
  * Processes resolved, not-yet-uploaded cards one at a time (skipping busyId, the card the pipeline holds).
  * The player row is re-read right before writing: a non-empty song skips the card, a non-empty intro
  * skips only the intro. Filenames use the DB row's team/name. Saves state after each card.
- * deps: readPlayer(id) -> row|null, findNameConflict(row) -> boolean (another row with the same team+name
- *       already has song/intro), render(renderPair opts), upload(localPath, dropboxPath), link(dropboxPath) -> url,
+ * Before each upload, a file already at the Dropbox path (other than one this card uploaded earlier, listed in
+ * card.uploadedPaths) is downloaded into backupDir first; a failed backup fails the card without uploading.
+ * deps: preflight() (throws to abort the whole submit before any render, e.g. no Dropbox token),
+ *       readPlayer(id) -> row|null, findNameConflict(row) -> boolean (another row with the same team+name
+ *       already has song/intro), render(renderPair opts), remoteExists(dropboxPath) -> boolean,
+ *       downloadRemote(dropboxPath, localPath), upload(localPath, dropboxPath), link(dropboxPath) -> url,
  *       writePlayer(id, patch) -> rows written (the caller writes only while every patched column is still empty),
  *       save(state), log(msg)
  */
-export async function submitApproved(state, { readPlayer, findNameConflict, render, upload, link, writePlayer, save, log = () => {} },
-  { studioDir = STUDIO_DIR, busyId = null, onStart } = {}) {
+export async function submitApproved(state, {
+  preflight = async () => {}, readPlayer, findNameConflict, render, remoteExists, downloadRemote, upload, link, writePlayer, save,
+  log = () => {},
+}, { studioDir = STUDIO_DIR, backupDir = defaultBackupDir(), busyId = null, onStart } = {}) {
+  await preflight()
   const summary = { uploaded: [], skipped: [], failed: [] }
+  // Never overwrite someone else's file without a copy: back it up, then upload; a failed backup throws.
+  const safeUpload = async (card, local, remote, name) => {
+    const own = (card.uploadedPaths ?? []).some((p) => p.toLowerCase() === remote.toLowerCase())
+    if (!own && await remoteExists(remote)) {
+      mkdirSync(backupDir, { recursive: true })
+      const dest = backupPathFor(backupDir, name)
+      try {
+        await downloadRemote(remote, dest)
+      } catch (e) {
+        throw new Error(`Dropbox 已有同名檔案，備份失敗，未上傳：${e.message}`)
+      }
+      log(`  已備份 Dropbox 原有檔案 ${remote} → ${dest}`)
+    }
+    await upload(local, remote)
+    card.uploadedPaths = [...new Set([...(card.uploadedPaths ?? []), remote])]
+  }
   const ready = (id) => state.cards[id]?.status === 'resolved' && !state.cards[id].uploaded && id !== busyId
   for (const id of Object.keys(state.cards).filter(ready)) {
     if (!ready(id)) continue // edited back to pending/skipped while earlier cards were uploading
@@ -53,11 +88,11 @@ export async function submitApproved(state, { readPlayer, findNameConflict, rend
         withIntro: card.withIntro && !introTaken,
       })
       const songRemote = `${DROPBOX_DIR}/${label}.mp3`
-      await upload(songPath, songRemote)
+      await safeUpload(card, songPath, songRemote, `${label}.mp3`)
       let patch = { song: await link(songRemote) }
       if (introPath) {
         const introRemote = `${DROPBOX_DIR}/${label} - Intro.mp3`
-        await upload(introPath, introRemote)
+        await safeUpload(card, introPath, introRemote, `${label} - Intro.mp3`)
         patch.intro = await link(introRemote)
       }
       let written = await writePlayer(id, patch)

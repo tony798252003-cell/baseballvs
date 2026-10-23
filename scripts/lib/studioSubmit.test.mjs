@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createSubmitter, submitApproved } from './studioSubmit.mjs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { backupPathFor, createSubmitter, submitApproved } from './studioSubmit.mjs'
 
 const card = (id, over = {}) => ({
   playerId: id, name: `卡片名${id}`, team: '卡片隊', status: 'resolved', original: `b/orig/${id}-v.mp3`,
@@ -10,7 +13,7 @@ const stateOf = (...cards) => ({ batch: 'b', cards: Object.fromEntries(cards.map
 const dbRow = (id, over = {}) => ({ id: Number(id), name: `球員${id}`, team: '樂天桃猿', song: null, intro: null, ...over })
 
 const fakes = (db, over = {}) => {
-  const calls = { render: [], upload: [], writes: [], saves: 0 }
+  const calls = { render: [], upload: [], writes: [], saves: 0, downloads: [] }
   return {
     calls,
     deps: {
@@ -20,6 +23,8 @@ const fakes = (db, over = {}) => {
         calls.render.push(opts)
         return { songPath: `${opts.outDir}/song.mp3`, introPath: opts.withIntro ? `${opts.outDir}/intro.mp3` : null }
       },
+      remoteExists: async () => false,
+      downloadRemote: async (remote, local) => { calls.downloads.push([remote, local]) },
       upload: async (local, remote) => { calls.upload.push([local, remote]) },
       link: async (remote) => `https://dl/${encodeURIComponent(remote)}?raw=1`,
       writePlayer: async (id, patch) => { calls.writes.push([id, patch]); return 1 },
@@ -29,7 +34,7 @@ const fakes = (db, over = {}) => {
     },
   }
 }
-const opts = { studioDir: '/studio' }
+const opts = { studioDir: '/studio', backupDir: '/nonexistent-backup-dir' }
 
 test('happy path renders with the card cut and gain, names files from the DB row, writes song+intro only', async () => {
   // Ruling 5: Dropbox names come from the current DB team/name, not the card's cached copy.
@@ -227,4 +232,82 @@ test('createSubmitter frees the lock when a submit throws', async () => {
   await assert.rejects(submitter.request(), /boom/)
   fail = false
   assert.deepEqual(await submitter.request(), { status: 200, body: 'ok' })
+})
+
+const tmp = (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'studio-backup-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  return dir
+}
+
+test('an existing Dropbox file at the target path is backed up before the upload overwrites it', async (t) => {
+  // Upload mode is overwrite: without a copy, someone else's file at the same path would be lost for good.
+  const backupDir = tmp(t)
+  const order = []
+  const f = fakes({ 1: dbRow('1') }, {
+    remoteExists: async (remote) => remote.endsWith('球員1.mp3'),
+    downloadRemote: async (remote, local) => { order.push(`backup ${remote}`); writeFileSync(local, 'old') },
+    upload: async (local, remote) => { order.push(`upload ${remote}`) },
+  })
+  const summary = await submitApproved(stateOf(card('1')), f.deps, { ...opts, backupDir })
+  assert.deepEqual(summary.uploaded, ['樂天桃猿 - 球員1'])
+  assert.deepEqual(order, ['backup /Music/Players/樂天桃猿 - 球員1.mp3', 'upload /Music/Players/樂天桃猿 - 球員1.mp3'])
+  assert.equal(readFileSync(join(backupDir, '樂天桃猿 - 球員1.mp3'), 'utf8'), 'old')
+})
+
+test('a failed backup download fails the card and nothing is uploaded or written', async (t) => {
+  // Overwriting is only acceptable once a copy exists.
+  const { calls, deps } = fakes({ 1: dbRow('1') }, {
+    remoteExists: async () => true,
+    downloadRemote: async () => { throw new Error('下載失敗 500') },
+  })
+  const summary = await submitApproved(stateOf(card('1')), deps, { ...opts, backupDir: tmp(t) })
+  assert.deepEqual(summary.failed, [{ name: '樂天桃猿 - 球員1', error: 'Dropbox 已有同名檔案，備份失敗，未上傳：下載失敗 500' }])
+  assert.deepEqual([calls.upload.length, calls.writes.length], [0, 0])
+})
+
+test('a file this card uploaded earlier (retry after a failed intro) is overwritten without a backup', async (t) => {
+  // Backing up our own half-finished upload would only pile up copies of the studio's render.
+  const state = stateOf(card('1', { uploadedPaths: ['/Music/Players/樂天桃猿 - 球員1.mp3'] }))
+  const { calls, deps } = fakes({ 1: dbRow('1') }, { remoteExists: async () => true })
+  const summary = await submitApproved(state, deps, { ...opts, backupDir: tmp(t) })
+  assert.deepEqual(summary.uploaded, ['樂天桃猿 - 球員1'])
+  assert.deepEqual(calls.downloads, [])
+  assert.equal(calls.upload.length, 1)
+})
+
+test('uploaded paths are remembered on the card so a retry after a failed intro skips the backup', async (t) => {
+  // The song upload succeeded before the intro failed; the retry must recognise the song as its own file.
+  const state = stateOf(card('1', { withIntro: true }))
+  let failIntro = true
+  const exists = new Set()
+  const { calls, deps } = fakes({ 1: dbRow('1') }, {
+    remoteExists: async (remote) => exists.has(remote),
+    upload: async (local, remote) => {
+      if (remote.endsWith('Intro.mp3') && failIntro) throw new Error('上傳失敗 500')
+      exists.add(remote)
+    },
+  })
+  await submitApproved(state, deps, { ...opts, backupDir: tmp(t) })
+  failIntro = false
+  const summary = await submitApproved(state, deps, { ...opts, backupDir: tmp(t) })
+  assert.deepEqual(summary.uploaded, ['樂天桃猿 - 球員1'])
+  assert.deepEqual(calls.downloads, [])
+})
+
+test('backupPathFor never overwrites an older backup of the same name', (t) => {
+  // Two submits on one day over the same path must keep both originals.
+  const dir = tmp(t)
+  assert.equal(backupPathFor(dir, 'a - b.mp3'), join(dir, 'a - b.mp3'))
+  writeFileSync(join(dir, 'a - b.mp3'), 'x')
+  writeFileSync(join(dir, 'a - b-1.mp3'), 'x')
+  assert.equal(backupPathFor(dir, 'a - b.mp3'), join(dir, 'a - b-2.mp3'))
+  assert.ok(!existsSync(join(dir, 'a - b-2.mp3')))
+})
+
+test('a failing preflight (no Dropbox token) rejects the submit before any render', async () => {
+  // Rendering every card only to fail each upload wastes minutes and hides the real cause.
+  const { calls, deps } = fakes({ 1: dbRow('1') }, { preflight: async () => { throw new Error('缺少 Dropbox 授權') } })
+  await assert.rejects(submitApproved(stateOf(card('1')), deps, opts), /缺少 Dropbox 授權/)
+  assert.equal(calls.render.length, 0)
 })
